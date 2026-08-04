@@ -1,5 +1,6 @@
 #include "stockbuild/strategy_runtime.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <stdexcept>
@@ -40,12 +41,16 @@ StrategyIntentColumns evaluate_strategy_runtime(
     std::span<const std::int64_t> timestamps_ns,
     std::span<const std::int64_t> session_days,
     std::span<const double> close,
+    std::span<const double> execution_price,
     std::span<const std::span<const std::uint8_t>> entry_conditions,
     std::span<const std::span<const std::uint8_t>> exit_conditions,
-    const StrategyRuntimeConfig& config) {
+    const StrategyRuntimeConfig& config,
+    std::size_t decision_start_row,
+    std::size_t decision_end_row) {
     const std::size_t rows = close.size();
-    if (timestamps_ns.size() != rows || session_days.size() != rows) {
-        throw std::invalid_argument("strategy timestamps/day/close lengths differ");
+    if (timestamps_ns.size() != rows || session_days.size() != rows ||
+        execution_price.size() != rows) {
+        throw std::invalid_argument("strategy timestamps/day/close/execution lengths differ");
     }
     if (entry_conditions.empty() || entry_conditions.size() > 64 || exit_conditions.size() > 64) {
         throw std::invalid_argument("strategy requires 1..64 entry and 0..64 exit columns");
@@ -66,6 +71,10 @@ StrategyIntentColumns evaluate_strategy_runtime(
     }
     for (const auto column : exit_conditions) {
         if (column.size() != rows) throw std::invalid_argument("exit condition length differs");
+    }
+    decision_end_row = std::min(decision_end_row, rows);
+    if (decision_start_row > decision_end_row) {
+        throw std::invalid_argument("strategy decision row range is invalid");
     }
 
     StrategyIntentColumns out;
@@ -88,7 +97,9 @@ StrategyIntentColumns evaluate_strategy_runtime(
     const std::int8_t open_action = config.short_direction ? -1 : 1;
 
     for (std::size_t row = 0; row < rows; ++row) {
-        if (!std::isfinite(close[row])) throw std::invalid_argument("strategy close is non-finite");
+        if (!std::isfinite(close[row]) || !std::isfinite(execution_price[row])) {
+            throw std::invalid_argument("strategy close/execution price is non-finite");
+        }
         if (row > 0 && timestamps_ns[row] <= timestamps_ns[row - 1]) {
             throw std::invalid_argument("strategy timestamps must be strictly increasing");
         }
@@ -98,7 +109,9 @@ StrategyIntentColumns evaluate_strategy_runtime(
             realized = 0.0;
         }
 
-        if (state == 0 && combine(entry_conditions, row, config.entry_logic, false)) {
+        const bool decision_enabled = row >= decision_start_row && row < decision_end_row;
+        if (decision_enabled && state == 0 &&
+            combine(entry_conditions, row, config.entry_logic, false)) {
             std::uint8_t blocked = 0;
             if (config.max_trades_per_day > 0 && trades_today >= config.max_trades_per_day) {
                 blocked = kMaxTrades;
@@ -115,14 +128,14 @@ StrategyIntentColumns evaluate_strategy_runtime(
                 out.kind[row] = 1;
                 out.action[row] = open_action;
                 out.quantity[row] = config.quantity;
-                out.price[row] = close[row];
+                out.price[row] = execution_price[row];
                 out.reason[row] = kEntrySignal;
                 state = config.short_direction ? -1 : 1;
-                entry_price = close[row];
+                entry_price = execution_price[row];
                 ++trades_today;
                 last_order_ns = timestamps_ns[row];
             }
-        } else if (state != 0) {
+        } else if (decision_enabled && state != 0) {
             const double favorable = (close[row] - entry_price) * static_cast<double>(state);
             std::uint8_t close_reason = 0;
             if (config.stop_loss_pct > 0.0 &&
@@ -142,9 +155,11 @@ StrategyIntentColumns evaluate_strategy_runtime(
                 out.kind[row] = 2;
                 out.action[row] = static_cast<std::int8_t>(-state);
                 out.quantity[row] = config.quantity;
-                out.price[row] = close[row];
+                out.price[row] = execution_price[row];
                 out.reason[row] = close_reason;
-                realized += favorable * static_cast<double>(config.quantity);
+                const double executed_favorable =
+                    (execution_price[row] - entry_price) * static_cast<double>(state);
+                realized += executed_favorable * static_cast<double>(config.quantity);
                 state = 0;
                 entry_price = 0.0;
             }

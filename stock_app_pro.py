@@ -12093,7 +12093,7 @@ class StockTradingAppPro(tk.Tk):
         if asset_type == "future" and tf_is_day:
             df = self._extend_with_taifex(df, tf, contract=contract, session=session_basis)
         elif asset_type == "stock" and tf_is_day:
-            df = self._extend_with_yahoo(df, tf, sym=s.get('symbol'))
+            df = self._extend_with_yahoo(df, tf, sym=st.get('symbol'))
         if df is None or df.empty:
             return df
         try:

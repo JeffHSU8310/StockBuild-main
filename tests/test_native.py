@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""ADR-145～152 C++/pybind11/SQLite/產品 runtime 整合測試。"""
+"""ADR-145～154 C++/pybind11/SQLite/產品 runtime 整合測試。"""
 import importlib.util
 import json
 import os
@@ -17,12 +17,13 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 SANITIZERS = '--sanitizers' in sys.argv
 
-from core import engine_router, futures_session, indicators, jae, native_bridge, strategy_engine
+from core import (backtest, engine_router, futures_session, indicators, jae,
+                  native_backtest_shadow, native_bridge, strategy_engine)
 from data import kbars_store
 from native import build_native
 
 
-class TestNativeFoundationADR145ToADR153(unittest.TestCase):
+class TestNativeFoundationADR145ToADR154(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         build_name = 'build-test-asan' if SANITIZERS else 'build-test'
@@ -157,11 +158,11 @@ class TestNativeFoundationADR145ToADR153(unittest.TestCase):
             cwd=ROOT, check=True, capture_output=True, text=True)
         info = json.loads(probe.stdout)
         self.assertEqual(Path(info['module_file']), module_path.resolve())
-        self.assertEqual(info['native_version'], '0.7.0')
+        self.assertEqual(info['native_version'], '0.8.0')
 
     def test_abi_layout_matches_python_contract(self):
         info = native_bridge.validate_abi_info(dict(self.native.abi_info()))
-        self.assertEqual(info['native_version'], '0.7.0')
+        self.assertEqual(info['native_version'], '0.8.0')
         self.assertEqual(info['struct_size'], 56)
         self.assertEqual(info['offsets']['flags'], 48)
         self.native.handshake(native_bridge.ABI_VERSION, native_bridge.KBAR_SCHEMA_VERSION)
@@ -808,6 +809,57 @@ class TestNativeFoundationADR145ToADR153(unittest.TestCase):
             native_bridge.evaluate_native_strategy(self.native, batch, [], ())
         with self.assertRaises(ValueError):
             result.kind[0] = 0
+
+    def test_adr154_t1_execution_prices_and_decision_bounds(self):
+        index = pd.date_range('2026-08-01', periods=6, freq='h')
+        frame = self._ohlcv(index)
+        frame['Close'] = np.array([100., 101., 104., 103., 95., 94.])
+        execution = np.array([101., 102., 110., 109., 90., 94.])
+        result = native_bridge.evaluate_native_strategy(
+            self.native, native_bridge.prepare_kbars(frame),
+            [{'type': 'price_above', 'params': {'value': 103.0}}], (),
+            stop_loss_abs=10.0, execution_prices=execution,
+            decision_start_row=2, decision_end_row=5)
+        self.assertEqual(np.flatnonzero(result.kind).tolist(), [2, 4])
+        self.assertEqual(result.price[2], 110.0)
+        self.assertEqual(result.entry_price[2], 110.0)
+        self.assertEqual(result.reason[4], 5)
+        self.assertEqual(result.price[4], 90.0)
+
+    def test_adr154_backtest_shadow_matches_python_authority(self):
+        index = pd.date_range('2026-08-01', periods=10, freq='h')
+        frame = pd.DataFrame({
+            'Open': [100., 101., 102., 110., 109., 108., 90., 92., 95., 96.],
+            'High': [101., 102., 105., 111., 110., 109., 93., 94., 106., 105.],
+            'Low': [99., 100., 101., 108., 107., 94., 89., 91., 94., 95.],
+            'Close': [100., 101., 104., 109., 108., 95., 91., 93., 105., 104.],
+            'Volume': np.full(10, 1000.0),
+        }, index=index)
+        strategy = {
+            'symbol': '2330', 'trade_type': '零股', 'direction': '做多', 'qty': 2,
+            'entry': [{'type': 'price_above', 'params': {'value': 103.0}}],
+            'exit_signals': [{'type': 'price_below', 'params': {'value': 90.0}}],
+            'stop_loss_abs': 10.0, 'stop_loss_pct': 0.0,
+            'take_profit_abs': 0.0, 'take_profit_pct': 0.0,
+            'intrabar_stop': False,
+        }
+        expected = backtest.run_backtest(strategy, frame, apply_cost_model=False)
+        report = native_backtest_shadow.run_shadow(
+            self.native, strategy, frame, apply_cost_model=False, strict=True)
+        self.assertEqual(report['status'], 'passed')
+        self.assertEqual(report['python_intents'], 3)
+        self.assertEqual(report['native_intents'], 3)
+        self.assertEqual(report['result'], expected)
+
+    def test_adr154_shadow_rejects_unsupported_semantics_explicitly(self):
+        frame = self._ohlcv(pd.date_range('2026-08-01', periods=6, freq='h'))
+        strategy = {
+            'kind': 'custom', 'source_code': 'def on_bar(ctx): return "HOLD"',
+            'entry': [{'type': 'always_true'}], 'intrabar_stop': False,
+        }
+        report = native_backtest_shadow.run_shadow(self.native, strategy, frame)
+        self.assertEqual(report['status'], 'not_applicable')
+        self.assertIn('custom Python', report['reason'])
 
     def test_native_compute_empty_short_and_invalid_inputs(self):
         empty = self._batch(0)

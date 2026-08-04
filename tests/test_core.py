@@ -1072,6 +1072,25 @@ class TestBacktest(unittest.TestCase):
         b = backtest.run_backtest(self._long_strategy(), df, exec_df=None)['metrics']['total_pnl']
         self.assertEqual(a, b)
 
+    def test_backtest_intent_trace_is_read_only_observation(self):
+        df = self._mkdf([100, 101, 103, 106, 104, 99, 98])
+        strategy = {
+            'symbol': '2330', 'trade_type': '零股', 'direction': '做多', 'qty': 1,
+            'entry': [{'type': 'always_true', 'params': {}}],
+            'exit_signals': [{'type': 'price_below', 'params': {'value': 1.0}}],
+            'intrabar_stop': False,
+        }
+        expected = backtest.run_backtest(strategy, df, apply_cost_model=False)
+        trace = []
+        actual = backtest.run_backtest(
+            strategy, df, apply_cost_model=False, _intent_trace=trace)
+        self.assertEqual(actual, expected)
+        self.assertTrue(trace)
+        self.assertTrue(all(event['execution_row'] == event['decision_row'] + 1
+                            for event in trace))
+        self.assertTrue(all(event['execution_ts'] == df.index[event['execution_row']]
+                            for event in trace))
+
     def test_backtest_equals_live_logic(self):
         # 回測第一個進場點必須等於引擎判定的金叉點「之後下一根」(證明同一套邏輯)。
         # 【ADR-064】引擎用「金叉當根收盤前」的已收盤資料判定訊號 (eval_window
