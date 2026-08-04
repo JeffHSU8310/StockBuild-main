@@ -129,6 +129,23 @@ class ConditionBatch:
 
 
 @dataclass(frozen=True)
+class StrategyIntentBatch:
+    kind: np.ndarray
+    action: np.ndarray
+    quantity: np.ndarray
+    price: np.ndarray
+    reason: np.ndarray
+    blocked_reason: np.ndarray
+    state: np.ndarray
+    entry_price: np.ndarray
+    realized_pnl_today: np.ndarray
+
+    @property
+    def rows(self):
+        return int(self.kind.size)
+
+
+@dataclass(frozen=True)
 class AdvancedIndicatorBatch:
     rsv: np.ndarray
     k: np.ndarray
@@ -626,6 +643,69 @@ def calculate_native_conditions(module, batch, conditions):
             raise KBarSchemaError(f'native condition 第 {index + 1} 欄列數不一致')
         column.setflags(write=False)
     return ConditionBatch(values)
+
+
+def evaluate_native_strategy(module, batch, entry_conditions, exit_conditions=(), **config):
+    """Evaluate standard conditions as broker-neutral typed intent columns (ADR-153)."""
+    validate_abi_info(dict(module.abi_info()))
+    validate_batch(batch)
+    entries = calculate_native_conditions(module, batch, entry_conditions)
+    exits = (calculate_native_conditions(module, batch, exit_conditions)
+             if exit_conditions else ConditionBatch(()))
+    day_ns = np.int64(86_400_000_000_000)
+    session_days = np.ascontiguousarray(batch.timestamps // day_ns, dtype=np.int64)
+
+    def nonnegative(name, default=0.0):
+        try:
+            value = float(config.get(name, default) or 0.0)
+        except (TypeError, ValueError) as exc:
+            raise KBarSchemaError(f'{name} must be numeric') from exc
+        if not np.isfinite(value) or value < 0.0:
+            raise KBarSchemaError(f'{name} must be finite and non-negative')
+        return value
+
+    direction = str(config.get('direction', 'LONG')).strip().upper()
+    entry_logic = str(config.get('entry_logic', 'AND')).strip().upper()
+    exit_logic = str(config.get('exit_logic', 'OR')).strip().upper()
+    if direction not in ('LONG', 'SHORT'):
+        raise KBarSchemaError('direction must be LONG or SHORT')
+    if entry_logic not in ('AND', 'OR') or exit_logic not in ('AND', 'OR'):
+        raise KBarSchemaError('entry_logic and exit_logic must be AND or OR')
+    try:
+        quantity = int(config.get('quantity', 1))
+        max_trades = int(config.get('max_trades_per_day', 0))
+    except (TypeError, ValueError) as exc:
+        raise KBarSchemaError('quantity and max_trades_per_day must be integers') from exc
+    if quantity <= 0 or max_trades < 0:
+        raise KBarSchemaError('quantity must be positive and max_trades_per_day non-negative')
+
+    payload = dict(module.strategy_runtime(
+        batch.timestamps, session_days, batch.close,
+        list(entries.values), list(exits.values), direction == 'SHORT', quantity,
+        entry_logic, exit_logic, nonnegative('stop_loss_pct'),
+        nonnegative('take_profit_pct'), nonnegative('stop_loss_abs'),
+        nonnegative('take_profit_abs'), max_trades,
+        nonnegative('daily_loss_limit'), nonnegative('cooldown_seconds')))
+    names_and_dtypes = (
+        ('kind', np.uint8), ('action', np.int8), ('quantity', np.uint32),
+        ('price', np.float64), ('reason', np.uint8), ('blocked_reason', np.uint8),
+        ('state', np.int8), ('entry_price', np.float64),
+        ('realized_pnl_today', np.float64),
+    )
+    try:
+        rows = int(payload['rows'])
+        columns = [payload[name] for name, _ in names_and_dtypes]
+    except (KeyError, TypeError, ValueError) as exc:
+        raise KBarSchemaError(f'native strategy runtime payload is invalid: {exc}') from exc
+    if rows != batch.rows:
+        raise KBarSchemaError('native strategy runtime row count differs')
+    for (name, dtype), column in zip(names_and_dtypes, columns):
+        if (not isinstance(column, np.ndarray) or column.ndim != 1 or
+                column.dtype != np.dtype(dtype) or not column.flags.c_contiguous or
+                column.size != rows):
+            raise KBarSchemaError(f'native strategy runtime {name} has an invalid ABI column')
+        column.setflags(write=False)
+    return StrategyIntentBatch(*columns)
 
 
 def calculate_native_advanced_indicators(

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(stockbuild_native VERSION 0.6.0 LANGUAGES CXX)
+project(stockbuild_native VERSION 0.7.0 LANGUAGES CXX)
 
 option(STOCKBUILD_BUILD_PYTHON "Build the pybind11 extension" ON)
 option(STOCKBUILD_ENABLE_SANITIZERS "Enable supported compiler sanitizers" OFF)
@@ -14,6 +14,7 @@ add_library(stockbuild_native_core STATIC
     src/indicators.cpp
     src/resampler.cpp
     src/sqlite_reader.cpp
+    src/strategy_runtime.cpp
 )
 target_include_directories(stockbuild_native_core PUBLIC include)
 set_target_properties(stockbuild_native_core PROPERTIES POSITION_INDEPENDENT_CODE ON)

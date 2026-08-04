@@ -14,3 +14,5 @@ python native/build_native.py --install
 
 ADR-152 另建立 24 種價格／均線／成交量／K 棒策略條件的 C++ 批次訊號核心，
 目前只供 differential 與後續 runtime 使用，尚未取代 Python Intent 或正式回測。
+ADR-153 已新增 C++ AND／OR、LONG／SHORT 狀態、停損停利及每日／冷卻風控，輸出
+broker-neutral typed intent stream；下一步先接正式回測的 shadow A/B，不直接送單。

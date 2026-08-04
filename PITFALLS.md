@@ -1578,3 +1578,14 @@
   產生 readonly `uint8` signal columns；runtime、回測、最佳化與選股按 bar index
   消費同一份結果。未支援條件要明確拒絕，不能靜默套用相似但不同的公式。
 - **出處**：ADR-152。
+
+### P-135　把 C++ 策略核心直接接券商，會跳過既有風控與成交語意
+
+- **症狀**：native 訊號很快，但回測的 T+1／成本／滑價與實盤的帳號路由、交易時段、
+  券商回報不一致；更嚴重時，尚未完成差分驗證的 native 結果直接變成真實委託。
+- **根因**：把「條件與狀態決策」和「執行委託」視為同一層，未保留 broker-neutral
+  OrderIntent 邊界，也沒有分 shadow、回測 rollout 與實盤 rollout。
+- **正確做法**：C++ 只輸出 typed intent stream 與拒絕原因，不依賴任何 broker SDK。
+  先在回測逐根比對 intent、T+1、成本、equity 與 metrics，再讓選股共用；GUI 與
+  實盤最後切換，而且仍必須通過 Python 的帳號／時段／券商安全閘門。
+- **出處**：ADR-153。
