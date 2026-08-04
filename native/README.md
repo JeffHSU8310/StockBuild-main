@@ -3,7 +3,7 @@
 這個目錄是 ADR-145～148 的 Windows 原生核心。提供 KBar ABI／批次邊界、SQLite
 唯讀 RAII reader、prepared range query、C++ 欄式 KBar buffers、OHLCV resampler，
 第一批 SMA／EMA／WMA／RSI／MACD／Bollinger，以及第二批 KDJ／DMI／JAE
-指標核心；尚未接管正式回測、策略、選股、GUI 或送單。
+指標核心與 ADR-154 T+1 回測 intent shadow；尚未接管正式回測結果、選股、GUI 或送單。
 
 ## 建置與測試
 

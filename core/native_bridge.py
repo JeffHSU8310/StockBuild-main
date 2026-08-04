@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""ADR-145～152：Python 與 StockBuild C++ core 的版本／欄式資料邊界。
+"""ADR-145～154：Python 與 StockBuild C++ core 的版本／欄式資料邊界。
 
 本檔只驗證 ABI、dtype、stride、SQLite range 與轉送批次資料，不包含策略、
 成交或風控規則。
@@ -679,13 +679,31 @@ def evaluate_native_strategy(module, batch, entry_conditions, exit_conditions=()
     if quantity <= 0 or max_trades < 0:
         raise KBarSchemaError('quantity must be positive and max_trades_per_day non-negative')
 
+    execution_prices = config.get('execution_prices')
+    if execution_prices is not None:
+        execution_prices = np.ascontiguousarray(execution_prices, dtype=np.float64)
+        if execution_prices.ndim != 1 or execution_prices.size != batch.rows:
+            raise KBarSchemaError('execution_prices must be a one-dimensional batch-sized array')
+        if not np.all(np.isfinite(execution_prices)):
+            raise KBarSchemaError('execution_prices must contain only finite values')
+    try:
+        decision_start_row = int(config.get('decision_start_row', 0))
+        decision_end_value = config.get('decision_end_row')
+        decision_end_row = (None if decision_end_value is None else int(decision_end_value))
+    except (TypeError, ValueError) as exc:
+        raise KBarSchemaError('decision row bounds must be integers') from exc
+    if decision_start_row < 0 or (decision_end_row is not None and
+                                  decision_end_row < decision_start_row):
+        raise KBarSchemaError('decision row range is invalid')
+
     payload = dict(module.strategy_runtime(
         batch.timestamps, session_days, batch.close,
         list(entries.values), list(exits.values), direction == 'SHORT', quantity,
         entry_logic, exit_logic, nonnegative('stop_loss_pct'),
         nonnegative('take_profit_pct'), nonnegative('stop_loss_abs'),
         nonnegative('take_profit_abs'), max_trades,
-        nonnegative('daily_loss_limit'), nonnegative('cooldown_seconds')))
+        nonnegative('daily_loss_limit'), nonnegative('cooldown_seconds'),
+        execution_prices, decision_start_row, decision_end_row))
     names_and_dtypes = (
         ('kind', np.uint8), ('action', np.int8), ('quantity', np.uint32),
         ('price', np.float64), ('reason', np.uint8), ('blocked_reason', np.uint8),

@@ -24,7 +24,7 @@ from . import strategy_engine
 
 def run_backtest(strategy, df, fee_rate=0.0, slippage_ticks=0, tick_size=None,
                  cost_params=None, apply_cost_model=True, should_stop=None,
-                 settle_open_at_end=True, exec_df=None):
+                 settle_open_at_end=True, exec_df=None, _intent_trace=None):
     """
     對單一策略在歷史 df 上回測。
 
@@ -199,6 +199,18 @@ def run_backtest(strategy, df, fee_rate=0.0, slippage_ticks=0, tick_size=None,
             # 不可以被 ADR-064 這條「一律用開盤價」蓋掉 —— 那會讓即時停損在
             # 回測裡永遠成交在開盤價,失去模擬的意義。
             intent['price'] = intent.get('_touch_price', open_px)
+        if _intent_trace is not None:
+            for intent in intents:
+                _intent_trace.append({
+                    'decision_row': i - 1,
+                    'execution_row': i,
+                    'decision_ts': ts_eval,
+                    'execution_ts': ts,
+                    'kind': str(intent.get('kind', '')),
+                    'action': str(intent.get('action', '')),
+                    'quantity': int(intent.get('qty', 0)),
+                    'price': float(intent.get('price', 0.0)),
+                })
         exec_open, exec_close_px = _exec_at(ts) if _use_watch else (open_px, float(df['Close'].iloc[i]))
 
         for intent in intents:

@@ -38,8 +38,11 @@ StrategyIntentColumns evaluate_strategy_runtime(
     std::span<const std::int64_t> timestamps_ns,
     std::span<const std::int64_t> session_days,
     std::span<const double> close,
+    std::span<const double> execution_price,
     std::span<const std::span<const std::uint8_t>> entry_conditions,
     std::span<const std::span<const std::uint8_t>> exit_conditions,
-    const StrategyRuntimeConfig& config);
+    const StrategyRuntimeConfig& config,
+    std::size_t decision_start_row = 0,
+    std::size_t decision_end_row = static_cast<std::size_t>(-1));
 
 }  // namespace stockbuild

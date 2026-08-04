@@ -1411,3 +1411,16 @@ bars／秒；這是決策核心 benchmark，不包含正式回測的 T+1、成�
 下一階段先接回測 shadow A/B，完成逐筆 parity 後才考慮讓標準策略採用 native。
 合併前驗證：`test_core` 820、`test_brokers` 43、Release／MSVC ASan native 各 38、
 `diag_repro_issues` 68、`diag_crossref` 與 74 個 Python 檔案編譯全數通過。
+
+## 追記三十七：ADR-154 正式回測 Native Intent Shadow A/B
+
+`_stockbuild_native` 升至 0.8.0。Runtime 分離判斷用 Close 與 T+1 execution price，
+並加入有效判斷列範圍，避免暖機列及最後一根產生不可成交 intent。
+`core/native_backtest_shadow.py` 執行正式 Python 回測後，獨立產生 native intent，
+逐筆比對判斷列、成交列、OPEN/CLOSE、方向、數量與價格；Python 的 trades、equity、
+markers、metrics 維持唯一權威輸出，不會連接 broker。
+
+目前僅涵蓋 native condition core 支援的標準策略。自訂 Python、買進持有／DCA、
+時間窗與 intrabar stop 明確標示 `not_applicable`。本機缺少 MSVC Build Tools，故本次
+只確認 C++ 嚴格語法、Python 編譯與 821 項 core 回歸；v0.8.0 Release／ASan 與 benchmark
+須在具備正式 MSVC 工具鏈的環境補跑。

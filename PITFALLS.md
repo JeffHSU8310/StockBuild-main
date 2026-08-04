@@ -1589,3 +1589,13 @@
   先在回測逐根比對 intent、T+1、成本、equity 與 metrics，再讓選股共用；GUI 與
   實盤最後切換，而且仍必須通過 Python 的帳號／時段／券商安全閘門。
 - **出處**：ADR-153。
+
+### P-136　Native 回測直接沿用訊號當根收盤價會產生假差異
+
+- **症狀**：native 與正式回測的交易列、成交價、停損基準持續差一根或一個跳空。
+- **根因**：正式回測是前一根收盤判斷、下一根開盤成交，舊 native runtime 卻在訊號列
+  直接用 Close 建倉。
+- **正確做法**：Runtime 分開接收判斷 Close 與 execution price，最後一根禁止產生無法
+  成交的 intent。自訂策略、DCA、時間窗與 intrabar 未實作前回報 `not_applicable`，
+  不可縮減語意後宣稱 parity。
+- **出處**：ADR-154。

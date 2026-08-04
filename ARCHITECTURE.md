@@ -151,6 +151,9 @@ PITFALLS P-27）。它們存在的唯一理由就是「可離線單元測試」�
   ADR-153 新增 `strategy_runtime`，消費上述條件欄並產生 broker-neutral SoA intent；
   AND／OR、FLAT／LONG／SHORT、停損停利、每日上限／虧損與冷卻均在 C++ 線性掃描。
   這仍是 shadow API；broker adapter、正式回測、GUI 與自訂 Python DSL 不變。
+  ADR-154 再加入 `core/native_backtest_shadow.py`，依「前一根收盤判斷、下一根開盤
+  成交」逐筆比對 Python/native intent。正式 trades、equity、markers、metrics 仍由
+  Python 產生；不支援語意會明確標成 `not_applicable`，不做降級比對。
 - `palette.py`（ADR-138）：指標線色盤。**舊有 8 色排最前面且標籤字串不可
   更動** —— `indicator_settings.json` 存的是**標籤字串**不是色碼，標籤一改，
   使用者存過的顏色會全部對不上而靜默退回預設色。後面接 255 系統色

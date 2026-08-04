@@ -422,7 +422,8 @@ py::dict strategy_runtime_native(
         const std::string& exit_logic, double stop_loss_pct,
         double take_profit_pct, double stop_loss_abs, double take_profit_abs,
         std::uint32_t max_trades_per_day, double daily_loss_limit,
-        double cooldown_seconds) {
+        double cooldown_seconds, const py::object& execution_price_object,
+        std::size_t decision_start_row, const py::object& decision_end_row_object) {
     const py::buffer_info timestamp_info = require_column<std::int64_t>(timestamps, "timestamps");
     const py::buffer_info day_info = require_column<std::int64_t>(session_days, "session_days");
     const py::buffer_info close_info = require_column<double>(close, "close");
@@ -430,6 +431,15 @@ py::dict strategy_runtime_native(
     if (timestamp_info.shape[0] != close_info.shape[0] || day_info.shape[0] != close_info.shape[0]) {
         throw std::invalid_argument("strategy timestamps/day/close lengths differ");
     }
+    py::array execution_price = execution_price_object.is_none()
+        ? close : py::cast<py::array>(execution_price_object);
+    const py::buffer_info execution_info =
+        require_column<double>(execution_price, "execution_price");
+    if (execution_info.shape[0] != close_info.shape[0]) {
+        throw std::invalid_argument("strategy execution price length differs");
+    }
+    const std::size_t decision_end_row = decision_end_row_object.is_none()
+        ? rows : py::cast<std::size_t>(decision_end_row_object);
 
     std::vector<py::array> arrays;
     arrays.reserve(entry_values.size() + exit_values.size());
@@ -464,7 +474,9 @@ py::dict strategy_runtime_native(
                 {static_cast<const std::int64_t*>(timestamp_info.ptr), rows},
                 {static_cast<const std::int64_t*>(day_info.ptr), rows},
                 {static_cast<const double*>(close_info.ptr), rows},
-                entry_columns, exit_columns, config));
+                {static_cast<const double*>(execution_info.ptr), rows},
+                entry_columns, exit_columns, config,
+                decision_start_row, decision_end_row));
     }
     stockbuild::StrategyIntentColumns* raw = columns.release();
     py::capsule owner(raw, [](void* pointer) {
@@ -539,7 +551,7 @@ py::dict advanced_indicator_core_native(const py::array& high,
 }  // namespace
 
 PYBIND11_MODULE(_stockbuild_native, module) {
-    module.doc() = "StockBuild ADR-153 native KBar, indicator and strategy runtime core";
+    module.doc() = "StockBuild ADR-154 native KBar, indicator and backtest-shadow runtime core";
     module.def("abi_info", &abi_info);
     module.def("handshake", &handshake, py::arg("expected_abi"), py::arg("expected_schema"));
     module.def("inspect_kbars", &inspect_kbars,
@@ -586,7 +598,10 @@ PYBIND11_MODULE(_stockbuild_native, module) {
                py::arg("stop_loss_abs") = 0.0, py::arg("take_profit_abs") = 0.0,
                py::arg("max_trades_per_day") = 0,
                py::arg("daily_loss_limit") = 0.0,
-               py::arg("cooldown_seconds") = 0.0);
+               py::arg("cooldown_seconds") = 0.0,
+               py::arg("execution_price") = py::none(),
+               py::arg("decision_start_row") = 0,
+               py::arg("decision_end_row") = py::none());
     module.def("advanced_indicator_core", &advanced_indicator_core_native,
                py::arg("high"), py::arg("low"), py::arg("close"),
                py::arg("kdj_n") = 9, py::arg("kdj_m1") = 3,

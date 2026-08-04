@@ -6345,6 +6345,27 @@ run_case("ADR-153: C++ strategy state/risk / typed intent / no broker dependency
          _native_strategy_runtime_153)
 
 
+def _native_backtest_shadow_154():
+    """T+1 shadow must observe Python authority and reject unsupported semantics."""
+    import inspect as _inspect
+    from pathlib import Path as _Path
+    from core import native_backtest_shadow as _shadow
+
+    shadow_source = _inspect.getsource(_shadow.run_shadow)
+    assert '_intent_trace' in shadow_source and "'not_applicable'" in shadow_source, \
+        "ADR154 shadow must observe Python intents and report unsupported semantics"
+    runtime_source = (_Path(__file__).resolve().parent / 'native' / 'src' /
+                      'strategy_runtime.cpp').read_text(encoding='utf-8')
+    for required in ('execution_price', 'decision_start_row', 'decision_end_row'):
+        assert required in runtime_source, f"ADR154 T+1 runtime is missing {required}"
+    assert 'broker' not in shadow_source and 'place_order' not in shadow_source, \
+        "ADR154 shadow must not connect to broker execution"
+
+
+run_case("ADR-154: T+1 native intent接正式回測shadow / Python仍為權威",
+         _native_backtest_shadow_154)
+
+
 print(f"{'案例':60s} 結果")
 print("-" * 76)
 for name, st, msg in results:
