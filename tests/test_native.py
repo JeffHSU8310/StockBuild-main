@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""ADR-145～147 C++/pybind11/SQLite/計算核心整合測試。"""
+"""ADR-145～148 C++/pybind11/SQLite/計算核心整合測試。"""
 import importlib.util
 import os
 import sqlite3
@@ -20,7 +20,7 @@ from data import kbars_store
 from native import build_native
 
 
-class TestNativeFoundationADR145ToADR147(unittest.TestCase):
+class TestNativeFoundationADR145ToADR148(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         build_name = 'build-test-asan' if SANITIZERS else 'build-test'
@@ -76,6 +76,50 @@ class TestNativeFoundationADR145ToADR147(unittest.TestCase):
                 actual, frame[name].to_numpy(np.float64), rtol=tolerance,
                 atol=tolerance, equal_nan=True)
 
+    def _advanced_python(self, frame, kdj=(9, 3, 3), dmi_n=14,
+                         jae=(14, 9, 3, 3, 60)):
+        def kdj_values(n, m1, m2):
+            low_min = frame['Low'].rolling(n).min()
+            high_max = frame['High'].rolling(n).max()
+            rsv = 100 * (frame['Close'] - low_min) / (high_max - low_min)
+            k = rsv.ewm(com=m1 - 1, adjust=False).mean()
+            d = k.ewm(com=m2 - 1, adjust=False).mean()
+            return rsv, k, d, 3 * k - 2 * d
+
+        rsv, k, d, j = kdj_values(*kdj)
+        up_move = frame['High'].diff()
+        down_move = -frame['Low'].diff()
+        plus_dm = pd.Series(
+            np.where((up_move > down_move) & (up_move > 0), up_move, 0.0),
+            index=frame.index)
+        minus_dm = pd.Series(
+            np.where((down_move > up_move) & (down_move > 0), down_move, 0.0),
+            index=frame.index)
+        tr = pd.concat([
+            frame['High'] - frame['Low'],
+            (frame['High'] - frame['Close'].shift(1)).abs(),
+            (frame['Low'] - frame['Close'].shift(1)).abs(),
+        ], axis=1).max(axis=1)
+        atr = tr.ewm(span=dmi_n, adjust=False).mean()
+        plus_di = 100 * plus_dm.ewm(span=dmi_n, adjust=False).mean() / atr
+        minus_di = 100 * minus_dm.ewm(span=dmi_n, adjust=False).mean() / atr
+        dx = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di)
+        adx = dx.ewm(span=dmi_n, adjust=False).mean()
+
+        a_period, j_n, j_m1, j_m2, e_period = jae
+        delta = frame['Close'].diff()
+        gain = delta.clip(lower=0).ewm(com=a_period - 1, adjust=False).mean()
+        loss = (-delta.clip(upper=0)).ewm(com=a_period - 1, adjust=False).mean()
+        jae_a = 100 - 100 / (1 + gain / loss)
+        jae_j = kdj_values(j_n, j_m1, j_m2)[3]
+        jae_e = jae_a.ewm(span=e_period, adjust=False).mean()
+        return {
+            'rsv': rsv, 'k': k, 'd': d, 'j': j,
+            'plus_dm': plus_dm, 'minus_dm': minus_dm,
+            'plus_di': plus_di, 'minus_di': minus_di, 'adx': adx,
+            'jae_a': jae_a, 'jae_j': jae_j, 'jae_e': jae_e,
+        }
+
     def test_build_uses_official_windows_abi_toolchain(self):
         if os.name == 'nt':
             self.assertIn('MSVC', self.build_result['compiler'])
@@ -88,7 +132,7 @@ class TestNativeFoundationADR145ToADR147(unittest.TestCase):
 
     def test_abi_layout_matches_python_contract(self):
         info = native_bridge.validate_abi_info(dict(self.native.abi_info()))
-        self.assertEqual(info['native_version'], '0.3.0')
+        self.assertEqual(info['native_version'], '0.4.0')
         self.assertEqual(info['struct_size'], 56)
         self.assertEqual(info['offsets']['flags'], 48)
         self.native.handshake(native_bridge.ABI_VERSION, native_bridge.KBAR_SCHEMA_VERSION)
@@ -547,6 +591,73 @@ class TestNativeFoundationADR145ToADR147(unittest.TestCase):
         mutated[10] += 0.01
         with self.assertRaises(AssertionError):
             np.testing.assert_allclose(mutated, expected, equal_nan=True)
+
+    def test_advanced_indicators_match_independent_pandas_formulas(self):
+        rows = 480
+        index = pd.date_range('2024-01-01', periods=rows, freq='D')
+        x = np.arange(rows, dtype=np.float64)
+        close = 120.0 + x * 0.025 + np.sin(x / 5.0) * 4.0 + np.cos(x / 17.0)
+        frame = pd.DataFrame({
+            'Open': close - 0.2,
+            'High': close + 1.0 + (x % 3) * 0.1,
+            'Low': close - 0.9 - (x % 5) * 0.08,
+            'Close': close,
+            'Volume': 1000.0 + x,
+        }, index=index)
+        batch = native_bridge.prepare_kbars(frame)
+        result = native_bridge.calculate_native_advanced_indicators(
+            self.native, batch, kdj_n=11, kdj_m1=4, kdj_m2=5, dmi_n=17,
+            jae_a_period=13, jae_j_n=10, jae_j_m1=2, jae_j_m2=4,
+            jae_e_period=55)
+        expected = self._advanced_python(
+            frame, kdj=(11, 4, 5), dmi_n=17, jae=(13, 10, 2, 4, 55))
+        for name, actual in result.as_dict().items():
+            np.testing.assert_allclose(
+                actual, expected[name].to_numpy(np.float64),
+                rtol=2e-11, atol=2e-11, equal_nan=True, err_msg=name)
+        self.assertTrue(all(not column.flags.writeable
+                            for column in result.as_dict().values()))
+        owner = result.rsv.base
+        self.assertTrue(all(column.base is owner for column in result.as_dict().values()))
+
+    def test_advanced_indicators_preserve_zero_range_and_nan_ewm_semantics(self):
+        close = np.array([100.0] * 12 + [101.0, 100.5, 102.0, 101.5, 103.0])
+        high = np.array([100.0] * 12 + [102.0, 101.0, 103.0, 102.0, 104.0])
+        low = np.array([100.0] * 12 + [100.0, 99.5, 101.0, 100.5, 102.0])
+        frame = pd.DataFrame({
+            'Open': close, 'High': high, 'Low': low, 'Close': close,
+            'Volume': np.ones(close.size),
+        }, index=pd.date_range('2026-01-01', periods=close.size, freq='D'))
+        result = native_bridge.calculate_native_advanced_indicators(
+            self.native, native_bridge.prepare_kbars(frame),
+            kdj_n=3, jae_j_n=3, jae_e_period=5)
+        expected = self._advanced_python(frame, kdj=(3, 3, 3), jae=(14, 3, 3, 3, 5))
+        for name, actual in result.as_dict().items():
+            np.testing.assert_allclose(
+                actual, expected[name].to_numpy(np.float64),
+                rtol=2e-12, atol=2e-12, equal_nan=True, err_msg=name)
+        self.assertTrue(np.isnan(result.rsv[2:12]).all())
+        self.assertTrue(np.isfinite(result.k[12:]).all())
+
+    def test_advanced_indicators_empty_invalid_and_mutation_guards(self):
+        empty = self._batch(0)
+        result = native_bridge.calculate_native_advanced_indicators(self.native, empty)
+        self.assertEqual(result.rows, 0)
+        with self.assertRaises(native_bridge.KBarSchemaError):
+            native_bridge.calculate_native_advanced_indicators(
+                self.native, self._batch(4), kdj_n=0)
+        bad = self._batch(4)
+        bad.high[2] = np.inf
+        with self.assertRaises(ValueError):
+            native_bridge.calculate_native_advanced_indicators(self.native, bad)
+
+        frame = self._ohlcv(pd.date_range('2026-01-01', periods=40, freq='D'))
+        expected = self._advanced_python(frame)['j'].to_numpy(np.float64)
+        actual = native_bridge.calculate_native_advanced_indicators(
+            self.native, native_bridge.prepare_kbars(frame)).j.copy()
+        actual[20] += 0.1
+        with self.assertRaises(AssertionError):
+            np.testing.assert_allclose(actual, expected, equal_nan=True)
 
 
 if __name__ == '__main__':

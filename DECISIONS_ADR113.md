@@ -1269,3 +1269,27 @@ NaN mask 完全一致，最大絕對誤差為 Bollinger WIDTH 約 `1.429e-9`，�
   shadow differential；目前 synthetic 與單元測試已過，不能冒充真實市場資料驗證。
 - GUI／回測／策略／選股正式接線屬後續階段，本次沒有新增可點按畫面；真實券商
   登入、報價與下單未執行，也不在本次 shadow 核心範圍內。
+
+## 追記三十一：ADR-148 C++ KDJ／DMI／JAE 與實際 SQLite shadow
+
+已完成 `_stockbuild_native` 0.4.0 的第二批 advanced indicator core。KDJ 使用
+O(n) monotonic deque 計算 rolling high/low；K、D、ADX 與 JAE E 精確保存 pandas
+`ewm(adjust=False, ignore_na=False)` 的 NaN／權重狀態。DMI 沿用現行 span 平滑，
+JAE 沿用 ADR-134 的 A=RSI、J=KDJ J、E=A 長期 EMA 定義。計算期間釋放 GIL，
+12 欄輸出共用 capsule owner 並為 readonly NumPy views；正式產品路徑仍未切換。
+
+1,000,000 根 synthetic 一分 K benchmark：C++ 中位數 164.089 ms，約
+6,094,265 根／秒；pandas 中位數 454.910 ms，提升 2.772 倍，所有 NaN mask 與
+數值逐欄通過。本次也直接讀取本機實際 SQLite：0050 日 K 5,215 根（約 20 年）及
+TXFR1 日 K 2,438 根（約 10 年），KDJ／DMI／JAE、週 K、月 K shadow differential
+全部通過；最大絕對誤差約 `2.842e-14`。
+
+合併前驗證：`test_core` 811 項、`test_brokers` 43 項、`diag_repro_issues` 63 項、
+Release native 30 項、MSVC ASan native 30 項、`diag_crossref` 與 69 個 Python
+檔案 `py_compile` 全數通過。
+
+### 待使用者實機驗證
+
+- 目前實際 SQLite 驗證資料為日 K；仍待累積足量期貨夜盤分 K 後，涵蓋休市、
+  13:45／15:00 邊界與跨交易日跑同一套 shadow runner。
+- 本次沒有新增或切換 GUI／回測／策略／選股操作；真實券商登入、報價與下單未執行。
