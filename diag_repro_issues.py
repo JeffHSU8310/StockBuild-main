@@ -413,7 +413,8 @@ def _perf_cache_progressive_and_seq_guard():
     app.draw_chart=lambda df:(draws.__setitem__('n',draws['n']+1), orig(df))[1]
     try:
         # 首載 0050 日K → 搶先出圖 1 段 + 分段補全 (ADR-046/047/048
-        # _download_kbars_chunked,chunk_days=90);換 5分K → 快取秒開、不重訂閱。
+        # _download_kbars_chunked,chunk_days=90);換 5分K → 若日K快取未涵蓋
+        # 5分K所需區間，可補抓缺口，但不可重複下載或重訂閱。
         # 【ADR-099】本斷言原本寫死「首載只下載1次」,那是分段下載功能加入之前的
         # 預期;分段補全是刻意的優化 (P-36:kbars 只回分K,長週期一次抓太多天會慢
         # 到不行),所以這裡改驗「有下載且每段起點不重複」,而不是寫死次數。
@@ -424,15 +425,21 @@ def _perf_cache_progressive_and_seq_guard():
         n_first=len(api.chart_calls())
         subs=api.quote.chart_subs()
         app._fetch_seq=2; app.fetch_data_worker('0050','5分K',2); app.flush_after()
-        assert len(api.chart_calls())==n_first, \
-            f"快取涵蓋時不應重新下載 (手動查詢路徑 {n_first}→{len(api.chart_calls())})"
+        tf_calls=api.chart_calls()[n_first:]
+        tf_starts=[c[1] for c in tf_calls]
+        assert len(tf_starts)==len(set(tf_starts)), \
+            f"換週期補抓不應重複同一起點: {tf_starts}"
         assert api.quote.chart_subs()==subs and api.quote.unsub==0, \
             f"同商品換週期不應重訂閱/退訂 (主圖訂閱 {subs}→{api.quote.chart_subs()}, 退訂 {api.quote.unsub})"
-        # TXF 日K 首載 → 兩段式 (2次下載,2次出圖)
+        # TXF 日K 首次建庫走兩段式；ADR-142 DB 已有近期資料時，快速段若已
+        # 涵蓋完整增量範圍就只抓一次。兩種狀態都必須至少出圖一次且起點不重複。
         k0=len(api.chart_calls()); d0=draws['n']
         app._fetch_seq=3; app.fetch_data_worker('TXF','日K',3); app.flush_after()
-        assert len(api.chart_calls())-k0==2, f"期貨首載應兩段式下載2次,實際{len(api.chart_calls())-k0}"
-        assert draws['n']-d0==2, f"應出圖2次(搶先+補全),實際{draws['n']-d0}"
+        tx_calls=api.chart_calls()[k0:]
+        assert 1 <= len(tx_calls) <= 2, f"期貨應為一次增量或兩段式下載,實際{len(tx_calls)}"
+        tx_starts=[c[1] for c in tx_calls]
+        assert len(tx_starts)==len(set(tx_starts)), f"期貨下載不應重複起點:{tx_starts}"
+        assert 1 <= draws['n']-d0 <= 2, f"期貨應出圖1~2次,實際{draws['n']-d0}"
         # 過期序號不可蓋圖
         d0=draws['n']; app._fetch_seq=99
         app.fetch_data_worker('0050','日K',5); app.flush_after()

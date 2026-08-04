@@ -1,0 +1,2 @@
+# 請使用 Python 3.11～3.13 安裝；kgisuperpy 的原生擴充尚不支援 3.14。
+kgisuperpy==2.1.0

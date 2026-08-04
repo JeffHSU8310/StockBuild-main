@@ -15,6 +15,7 @@ place_order 是**非冪等**的。逾時或管線斷掉時,我們無法知道券
 查詢類操作 (冪等) 才允許自動重啟並重試一次。
 """
 import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -33,12 +34,28 @@ def default_python():
     先試 python3.13:凱基自帶的擴充最高只到 cp313。刻意**不**退回
     sys.executable —— 主程式若是 3.14,退回去只會得到一個 import 就失敗的
     子行程,錯誤訊息還更難懂,不如明確地找不到。
+
+    Windows 的官方安裝通常只有 ``python.exe``，不會建立名為
+    ``python3.13`` 的檔案；因此 PATH 名稱找不到時，再透過 Python Launcher
+    (``py -3.13``) 查出該版本真正的 executable 路徑。
     """
-    for cand in ('python3.13', 'python3.12', 'python3.11'):
-        for d in (os.environ.get('PATH') or '').split(os.pathsep):
-            p = os.path.join(d, cand)
-            if os.path.isfile(p) and os.access(p, os.X_OK):
-                return p
+    for version in ('3.13', '3.12', '3.11'):
+        direct = shutil.which(f'python{version}')
+        if direct:
+            return direct
+
+        launcher = shutil.which('py')
+        if launcher:
+            try:
+                result = subprocess.run(
+                    [launcher, f'-{version}', '-c',
+                     'import sys; print(sys.executable)'],
+                    capture_output=True, text=True, timeout=5, check=True)
+                resolved = result.stdout.strip().splitlines()[-1]
+                if os.path.isfile(resolved) and os.access(resolved, os.X_OK):
+                    return resolved
+            except (subprocess.SubprocessError, OSError, IndexError):
+                pass
     return ''
 
 
