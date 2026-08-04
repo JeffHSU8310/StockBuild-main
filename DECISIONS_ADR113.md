@@ -1372,3 +1372,28 @@ Release native 34 項、MSVC ASan native 34 項、`diag_crossref` 與 72 個 Pyt
 - `native` 正式輸出仍未開放；回測、策略與選股仍走 Python，必須各自完成 C++ 核心、
   golden differential 與 rollout 才能切換。
 - 真實券商登入、報價與下單未執行，本階段不改任何送單安全邊界。
+
+## 追記三十五：ADR-152 C++ 批次策略條件核心
+
+`_stockbuild_native` 已升至 0.6.0，新增 `condition_core` typed batch API。第一批
+支援 24 種價格、SMA／EMA、成交量與 K 棒條件，一次由既有 OHLCV buffer 產生
+逐根 readonly `uint8` signal columns；計算釋放 GIL，所有輸出共用 capsule owner。
+Python bridge 明確編譯 condition type、numeric params 與 ma kind，未知或非法條件
+直接拒絕。C++ source 不含 shioaji、kgisuperpy、BrokerClient 或 place_order 符號。
+
+360 根資料的每一根、每一條件均與現行 `strategy_engine.CONDITIONS` 完全一致。
+600 根 × 24 條件：C++ 1.3169 ms，現行 Python growing-DataFrame 逐根重算
+2938.2765 ms；100,000 根產生 2,400,000 個條件訊號為 39.7701 ms，約 60.35
+百萬 bar-condition／秒。這只代表條件預計算，不宣稱完整回測已有相同比例加速。
+可重現報告記於 `benchmarks/results/adr152_conditions_20260804.json`。
+
+合併前驗證：`test_core` 820 項、`test_brokers` 43 項、`diag_repro_issues` 67 項、
+Release native 36 項、MSVC ASan native 36 項、`diag_crossref` 與 73 個 Python
+檔案 `py_compile` 全數通過。
+
+### 待後續工程／實機驗證
+
+- 下一階段接 entry／exit AND／OR、runtime state、DCA／buy-and-hold、risk 與
+  broker-neutral OrderIntent，逐根比對 intent 與拒絕原因。
+- RSI／KD／MACD／BB 與籌碼條件仍待加入同一 typed condition core。
+- 本階段沒有新增 GUI，也沒有執行真實券商登入、報價或下單。

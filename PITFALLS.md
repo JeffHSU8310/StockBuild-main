@@ -1567,3 +1567,14 @@
   再按原索引映射 `MA_CUSTOM_n`。close 只驗證一次、計算釋放 GIL，所有輸出共享
   owner 且 readonly；批次欄數、列數、dtype 與類型都要在 bridge 重驗。
 - **出處**：ADR-151。
+
+### P-134　逐根把 growing DataFrame 送進條件函式，回測會反覆重算同一段歷史
+
+- **症狀**：單一條件看起來很快，但 10 萬根回測每一根都重新 rolling／ewm；
+  最佳化與選股再乘上參數組合及標的數，時間呈現近似平方成長。
+- **根因**：條件 API 只回「最後一根是否成立」，沒有先為完整 KBar batch 產生
+  可重用的逐根訊號欄；不同消費者因此各自切 DataFrame、重算相同指標。
+- **正確做法**：先把 condition dict 編譯成 typed batch request，C++ 一次線性掃描
+  產生 readonly `uint8` signal columns；runtime、回測、最佳化與選股按 bar index
+  消費同一份結果。未支援條件要明確拒絕，不能靜默套用相似但不同的公式。
+- **出處**：ADR-152。

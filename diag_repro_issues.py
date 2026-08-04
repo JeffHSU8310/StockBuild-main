@@ -6300,6 +6300,28 @@ run_case("ADR-151: 六組自訂MA進C++批次核心 / GUI shadow最多31欄",
          _native_multi_ma_151)
 
 
+def _native_condition_core_152():
+    """條件核心必須是 typed batch，且不能連到 broker／送單符號。"""
+    import inspect as _inspect
+    from pathlib import Path as _Path
+    from core import native_bridge as _native_bridge
+
+    bridge_source = _inspect.getsource(_native_bridge.calculate_native_conditions)
+    assert 'condition_core' in bridge_source and '_NATIVE_CONDITION_SPECS' in bridge_source, \
+        "ADR152 bridge 尚未把 condition dict 編譯成 native typed batch"
+    native_source = (_Path(__file__).resolve().parent / 'native' / 'src' /
+                     'conditions.cpp').read_text(encoding='utf-8')
+    for forbidden in ('shioaji', 'kgisuperpy', 'place_order', 'BrokerClient'):
+        assert forbidden not in native_source, \
+            f"native condition core 不可依賴 broker／送單符號：{forbidden}"
+    assert 'std::vector<std::uint8_t>' in native_source, \
+        "native condition core 必須輸出逐根 typed signal column"
+
+
+run_case("ADR-152: C++批次策略條件 / 逐根訊號 / 無broker依賴",
+         _native_condition_core_152)
+
+
 print(f"{'案例':60s} 結果")
 print("-" * 76)
 for name, st, msg in results:

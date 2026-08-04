@@ -11,3 +11,6 @@ python native/build_native.py --install
 切為 `shadow`。shadow 仍使用 Python 結果畫圖，同時逐欄驗證 C++；正式 `native`
 輸出尚未開放。ADR-151 已把六組自訂 SMA／EMA／WMA 納入同一次 C++ 批次計算，
 產品 shadow 現可核對最多 31 欄；詳細規則見 `DECISIONS_ADR151.md`。
+
+ADR-152 另建立 24 種價格／均線／成交量／K 棒策略條件的 C++ 批次訊號核心，
+目前只供 differential 與後續 runtime 使用，尚未取代 Python Intent 或正式回測。

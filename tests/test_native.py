@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""ADR-145～151 C++/pybind11/SQLite/產品 runtime 整合測試。"""
+"""ADR-145～152 C++/pybind11/SQLite/產品 runtime 整合測試。"""
 import importlib.util
 import json
 import os
@@ -17,12 +17,12 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 SANITIZERS = '--sanitizers' in sys.argv
 
-from core import engine_router, futures_session, indicators, jae, native_bridge
+from core import engine_router, futures_session, indicators, jae, native_bridge, strategy_engine
 from data import kbars_store
 from native import build_native
 
 
-class TestNativeFoundationADR145ToADR151(unittest.TestCase):
+class TestNativeFoundationADR145ToADR152(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         build_name = 'build-test-asan' if SANITIZERS else 'build-test'
@@ -157,11 +157,11 @@ class TestNativeFoundationADR145ToADR151(unittest.TestCase):
             cwd=ROOT, check=True, capture_output=True, text=True)
         info = json.loads(probe.stdout)
         self.assertEqual(Path(info['module_file']), module_path.resolve())
-        self.assertEqual(info['native_version'], '0.5.0')
+        self.assertEqual(info['native_version'], '0.6.0')
 
     def test_abi_layout_matches_python_contract(self):
         info = native_bridge.validate_abi_info(dict(self.native.abi_info()))
-        self.assertEqual(info['native_version'], '0.5.0')
+        self.assertEqual(info['native_version'], '0.6.0')
         self.assertEqual(info['struct_size'], 56)
         self.assertEqual(info['offsets']['flags'], 48)
         self.native.handshake(native_bridge.ABI_VERSION, native_bridge.KBAR_SCHEMA_VERSION)
@@ -617,6 +617,81 @@ class TestNativeFoundationADR145ToADR151(unittest.TestCase):
                 self.native, self._batch(4), [1] * 65, ['SMA'] * 65)
         with self.assertRaises(ValueError):
             short.values[1][0] = 0.0
+
+    def test_adr152_condition_core_matches_python_for_every_bar(self):
+        rows = 360
+        index = pd.date_range('2025-01-01', periods=rows, freq='h')
+        x = np.arange(rows, dtype=np.float64)
+        close = 100.0 + np.sin(x / 5.0) * 8.0 + np.cos(x / 17.0) * 3.0 + x * 0.01
+        open_ = close + np.sin(x / 3.0) * 1.5
+        frame = pd.DataFrame({
+            'Open': open_, 'High': np.maximum(open_, close) + 1.0 + (x % 4) * 0.2,
+            'Low': np.minimum(open_, close) - 1.0 - (x % 3) * 0.15,
+            'Close': close, 'Volume': 800.0 + (x % 11) * 150.0 + np.sin(x) * 50.0,
+        }, index=index)
+        conditions = [
+            {'type': 'ma_cross_up', 'params': {'fast': 5, 'slow': 20}},
+            {'type': 'ma_cross_down', 'params': {'fast': 7, 'slow': 25}},
+            {'type': 'price_break_high', 'params': {'n': 12}},
+            {'type': 'price_break_low', 'params': {'n': 15}},
+            {'type': 'price_above', 'params': {'value': 105}},
+            {'type': 'price_below', 'params': {'value': 98}},
+            {'type': 'price_cross_up_ma', 'params': {'n': 13, 'kind': 'EMA'}},
+            {'type': 'price_cross_down_ma', 'params': {'n': 18, 'kind': 'SMA'}},
+            {'type': 'price_above_ma', 'params': {'n': 21, 'kind': 'EMA'}},
+            {'type': 'price_below_ma', 'params': {'n': 21, 'kind': 'SMA'}},
+            {'type': 'ma_slope_up', 'params': {'n': 16, 'look': 4, 'kind': 'EMA'}},
+            {'type': 'ma_slope_down', 'params': {'n': 16, 'look': 5, 'kind': 'SMA'}},
+            {'type': 'ma_align_bull', 'params': {'short': 5, 'mid': 13, 'long': 34,
+                                                  'kind': 'EMA'}},
+            {'type': 'ma_align_bear', 'params': {'short': 6, 'mid': 15, 'long': 40,
+                                                  'kind': 'SMA'}},
+            {'type': 'volume_above_ma', 'params': {'n': 10, 'mult': 1.1}},
+            {'type': 'volume_below_ma', 'params': {'n': 12, 'mult': 0.9}},
+            {'type': 'consecutive_up', 'params': {'n': 3}},
+            {'type': 'consecutive_down', 'params': {'n': 2}},
+            {'type': 'pct_change_above', 'params': {'value': 1.2}},
+            {'type': 'pct_change_below', 'params': {'value': -1.0}},
+            {'type': 'always_true', 'params': {}},
+            {'type': 'inside_bar', 'params': {}},
+            {'type': 'gap_up', 'params': {'value': 0.1}},
+            {'type': 'gap_down', 'params': {'value': 0.1}},
+        ]
+        result = native_bridge.calculate_native_conditions(
+            self.native, native_bridge.prepare_kbars(frame), conditions)
+        self.assertEqual(result.rows, rows)
+        self.assertEqual(result.count, len(conditions))
+        for condition, actual in zip(conditions, result.values):
+            function = strategy_engine.CONDITIONS[condition['type']][2]
+            expected = np.array([
+                bool(function(frame.iloc[:i + 1], condition['params']))
+                for i in range(rows)
+            ], dtype=np.uint8)
+            np.testing.assert_array_equal(actual, expected, err_msg=condition['type'])
+        self.assertTrue(all(not column.flags.writeable for column in result.values))
+        owner = result.values[0].base
+        self.assertTrue(all(column.base is owner for column in result.values))
+
+    def test_adr152_condition_core_invalid_empty_and_mutation_guards(self):
+        empty = native_bridge.calculate_native_conditions(
+            self.native, self._batch(0), [{'type': 'always_true', 'params': {}}])
+        self.assertEqual(empty.rows, 0)
+        invalid = [
+            [], [{'type': 'unknown'}], [{'type': 'ma_cross_up', 'params': {'fast': 0}}],
+            [{'type': 'price_above_ma', 'params': {'kind': 'WMA'}}], [None],
+        ]
+        for conditions in invalid:
+            with self.subTest(conditions=conditions):
+                with self.assertRaises((native_bridge.KBarSchemaError, ValueError)):
+                    native_bridge.calculate_native_conditions(
+                        self.native, self._batch(5), conditions)
+        with self.assertRaises(native_bridge.KBarSchemaError):
+            native_bridge.calculate_native_conditions(
+                self.native, self._batch(5), [{'type': 'always_true'}] * 65)
+        values = native_bridge.calculate_native_conditions(
+            self.native, self._batch(5), [{'type': 'always_true'}]).values[0]
+        with self.assertRaises(ValueError):
+            values[0] = 0
 
     def test_native_compute_empty_short_and_invalid_inputs(self):
         empty = self._batch(0)
