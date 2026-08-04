@@ -18,5 +18,13 @@ CMake 與 Ninja 建置，再執行 CTest。`tests/test_native.py` 每次使用�
 `native/build-test`，並測試 Python import、ABI、100 萬根 zero-copy 與 SQLite 解鎖。
 
 可用 `python native/build_native.py --sanitizers` 啟用 sanitizer 設定；MSVC 主機還必須
-安裝與 compiler 相符的 AddressSanitizer runtime，否則會在連結階段失敗。建置目錄、
-`.pyd` 與本機 SQLite 檔案都不提交 Git。
+安裝與 compiler 相符的 AddressSanitizer runtime，否則會在連結階段失敗。完整 native
+邊界的 sanitizer 驗證使用：
+
+```powershell
+python tests/test_native.py --sanitizers
+```
+
+Windows 10 會由建置工具透過 `vswhere` 選擇含 ASan 元件的 Visual Studio 2022，並把
+測試所需 runtime 複製到被忽略的 build 目錄；一般 Release build 選最新可啟動 MSVC。
+建置目錄、runtime、`.pyd` 與本機 SQLite 檔案都不提交 Git。

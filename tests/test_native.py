@@ -13,6 +13,7 @@ import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+SANITIZERS = '--sanitizers' in sys.argv
 
 from core import native_bridge
 from data import kbars_store
@@ -22,7 +23,9 @@ from native import build_native
 class TestNativeFoundationADR145(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        result = build_native.build(ROOT / 'native' / 'build-test', config='Release')
+        build_name = 'build-test-asan' if SANITIZERS else 'build-test'
+        result = build_native.build(
+            ROOT / 'native' / build_name, config='Release', sanitizers=SANITIZERS)
         cls.build_result = result
         spec = importlib.util.spec_from_file_location('_stockbuild_native', result['module'])
         if spec is None or spec.loader is None:
@@ -45,6 +48,11 @@ class TestNativeFoundationADR145(unittest.TestCase):
         if os.name == 'nt':
             self.assertIn('MSVC', self.build_result['compiler'])
         self.assertTrue(Path(self.build_result['module']).exists())
+        if SANITIZERS:
+            self.assertTrue(self.build_result['sanitizers'])
+            runtime = Path(self.build_result['asan_runtime'])
+            self.assertTrue(runtime.exists())
+            self.assertTrue((Path(self.build_result['module']).parent / runtime.name).exists())
 
     def test_abi_layout_matches_python_contract(self):
         info = native_bridge.validate_abi_info(dict(self.native.abi_info()))
@@ -152,4 +160,4 @@ class TestNativeFoundationADR145(unittest.TestCase):
 
 
 if __name__ == '__main__':
-    unittest.main(verbosity=2)
+    unittest.main(argv=[sys.argv[0]], verbosity=2)
