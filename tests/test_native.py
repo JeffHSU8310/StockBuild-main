@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 SANITIZERS = '--sanitizers' in sys.argv
 
-from core import futures_session, native_bridge
+from core import engine_router, futures_session, indicators, jae, native_bridge
 from data import kbars_store
 from native import build_native
 
@@ -658,6 +658,43 @@ class TestNativeFoundationADR145ToADR148(unittest.TestCase):
         actual[20] += 0.1
         with self.assertRaises(AssertionError):
             np.testing.assert_allclose(actual, expected, equal_nan=True)
+
+    def test_adr149_real_native_shadow_routes_shared_indicator_columns(self):
+        frame = self._ohlcv(pd.date_range('2024-01-01', periods=480, freq='D'))
+        settings = {
+            'bb_enabled': True, 'bb_period': 20,
+            'bb_std_up': 2.1, 'bb_std_down': 1.8, 'bb_ma_type': 'EMA',
+            'bb2_enabled': True, 'bb2_period': 55,
+            'bb2_std_up': 2.5, 'bb2_std_down': 2.2, 'bb2_ma_type': 'WMA',
+            'macd_enabled': True, 'macd_fast': 10, 'macd_slow': 24,
+            'macd_signal': 7, 'rsi_enabled': True, 'rsi_period': 13,
+            'kdj_enabled': True, 'kdj_period': 11, 'k_smooth': 4, 'd_smooth': 5,
+            'dmi_enabled': True, 'dmi_period': 17,
+            'jae_enabled': True,
+            'jae_params': {'a_period': 13, 'j_n': 10, 'j_m1': 2,
+                           'j_m2': 4, 'e_period': 55},
+        }
+        expected = indicators.calculate_indicators(
+            frame, [False] * 6, ['SMA'] * 6, [5] * 6,
+            bb_show=True, bbw_show=True, bb_period=20,
+            bb_std_up=2.1, bb_std_dn=1.8, bb_type='EMA',
+            bb2_show=True, bb2_period=55, bb2_std_up=2.5,
+            bb2_std_dn=2.2, bb2_type='WMA',
+            macd_show=True, macd_f=10, macd_s=24, macd_sig=7,
+            rsi_show=True, rsi_p=13,
+            kdj_show=True, kd_n=11, kd_m1=4, kd_m2=5,
+            dmi_show=True, dmi_n=17)
+        jae.compute(expected, settings['jae_params'])
+
+        def provider(source, route_settings):
+            return engine_router.calculate_native_columns(
+                source, route_settings, module=self.native)
+
+        routed = engine_router.route_indicators(
+            frame, expected, settings, mode='shadow', native_provider=provider)
+        self.assertIs(routed.frame, expected)
+        self.assertEqual(routed.telemetry['status'], 'passed')
+        self.assertEqual(routed.telemetry['compared_columns'], 25)
 
 
 if __name__ == '__main__':

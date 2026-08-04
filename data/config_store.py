@@ -257,6 +257,8 @@ DEFAULT_APP_SETTINGS = {
     'odd_lot_open': '09:10',       # 盤中零股開盤時刻 (現制 09:10;未來改 09:00 自己切)
     'auto_reconnect': False,       # 斷線自動重連開關 (記憶體憑證)
     'remember_creds': False,       # 記住憑證並開機自動登入 (加密存本機)
+    # 【ADR-149】C++ 指標路由：off=Python；shadow=Python authoritative + native 比對。
+    'native_indicators': 'off',
     # 【ADR-120】主圖【盤勢判斷】面板設定 (支撐壓力 + 盤勢/型態偵測)。
     # 這裡刻意存成一整包 dict 而不攤平成十幾個 key:欄位的預設值與值域檢查
     # 全部收斂在 core/regime_panel.normalize(),config_store 不需要知道

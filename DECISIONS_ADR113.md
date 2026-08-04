@@ -1293,3 +1293,28 @@ Release native 30 項、MSVC ASan native 30 項、`diag_crossref` 與 69 個 Pyt
 - 目前實際 SQLite 驗證資料為日 K；仍待累積足量期貨夜盤分 K 後，涵蓋休市、
   13:45／15:00 邊界與跨交易日跑同一套 shadow runner。
 - 本次沒有新增或切換 GUI／回測／策略／選股操作；真實券商登入、報價與下單未執行。
+
+## 追記三十二：ADR-149 Native 指標路由與主圖 shadow 接線
+
+已新增 `core.engine_router` 與 `app_settings.native_indicators`，把 ADR-147／148 的
+C++ 指標第一次接入正式主圖 `calculate_custom_indicators()` 呼叫鏈。預設 `off`
+完全不載入 native；明確選擇 `shadow` 時，Python 仍是 authoritative output，並對
+BB／BBW、第二組 BB、MACD、RSI、KDJ、DMI、JAE 共 25 欄核對長度、NaN mask 與
+逐欄窄 tolerance。ABI、載入、參數或 parity 失敗都讓當次工作明確失敗並寫日誌，
+不得靜默 fallback；`native` 模式則由程式拒絕，必須等實際產品 shadow 與 extension
+發布驗收後另開 ADR。六組可自訂 MA 尚未進 native 多週期 API，仍維持 Python。
+
+合併前驗證：`test_core` 818 項、`test_brokers` 43 項、`diag_repro_issues` 64 項、
+Release native 31 項、MSVC ASan native 31 項、`diag_crossref` 與 70 個 Python
+檔案 `py_compile` 全數通過。新增測試包含 off 不載入 native、無支援欄位 no-op、
+數值突變、NaN 突變、禁止提前開 native、設定 round-trip，以及真實 Release module
+對 480 根資料的 25 欄產品路由 differential。
+
+### 待使用者實機驗證
+
+- 在正式 extension 安裝／打包完成後，把 `app_settings.json` 的
+  `native_indicators` 明確設為 `shadow`，以 tkinter 主圖操作日 K／分 K、股票／期貨、
+  切換全部支援指標與參數，確認日誌、縮放重畫和 UI 延遲。
+- 目前尚未開放 `native` 正式輸出；回測、策略與選股也仍走 Python，必須等各自的
+  C++ event／condition／screener core 完成 golden differential 後逐項接線。
+- 真實券商登入、報價與下單未執行；本階段只接主圖指標計算，不改送單安全邊界。
