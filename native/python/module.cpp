@@ -11,6 +11,8 @@
 #include <vector>
 
 #include "stockbuild/kbar_schema.hpp"
+#include "stockbuild/indicators.hpp"
+#include "stockbuild/resampler.hpp"
 #include "stockbuild/sqlite_reader.hpp"
 #include "stockbuild/version.hpp"
 
@@ -206,19 +208,7 @@ py::array vector_view(std::vector<T>& values, const py::object& owner) {
     return py::array(py::dtype::of<T>(), shape, strides, values.data(), owner);
 }
 
-py::dict sqlite_range(const std::string& database_path,
-                      const std::string& sqlite_library_path,
-                      const std::string& symbol,
-                      const std::string& asset_type,
-                      const std::string& timeframe,
-                      const std::optional<std::string>& start_ts,
-                      const std::optional<std::string>& end_ts) {
-    std::unique_ptr<stockbuild::KBarColumns> columns;
-    {
-        py::gil_scoped_release release;
-        columns = std::make_unique<stockbuild::KBarColumns>(stockbuild::read_kbars_range(
-            database_path, sqlite_library_path, symbol, asset_type, timeframe, start_ts, end_ts));
-    }
+py::dict kbar_columns_payload(std::unique_ptr<stockbuild::KBarColumns> columns) {
     stockbuild::KBarColumns* raw = columns.release();
     py::capsule owner(raw, [](void* pointer) {
         delete static_cast<stockbuild::KBarColumns*>(pointer);
@@ -240,6 +230,22 @@ py::dict sqlite_range(const std::string& database_path,
     return result;
 }
 
+py::dict sqlite_range(const std::string& database_path,
+                      const std::string& sqlite_library_path,
+                      const std::string& symbol,
+                      const std::string& asset_type,
+                      const std::string& timeframe,
+                      const std::optional<std::string>& start_ts,
+                      const std::optional<std::string>& end_ts) {
+    std::unique_ptr<stockbuild::KBarColumns> columns;
+    {
+        py::gil_scoped_release release;
+        columns = std::make_unique<stockbuild::KBarColumns>(stockbuild::read_kbars_range(
+            database_path, sqlite_library_path, symbol, asset_type, timeframe, start_ts, end_ts));
+    }
+    return kbar_columns_payload(std::move(columns));
+}
+
 std::string sqlite_range_query_plan(const std::string& database_path,
                                     const std::string& sqlite_library_path,
                                     const std::string& symbol,
@@ -252,10 +258,82 @@ std::string sqlite_range_query_plan(const std::string& database_path,
                                            symbol, asset_type, timeframe, start_ts, end_ts);
 }
 
+py::dict resample_kbars_native(const py::array& timestamps,
+                               const py::array& open,
+                               const py::array& high,
+                               const py::array& low,
+                               const py::array& close,
+                               const py::array& volume,
+                               const py::array& flags,
+                               const std::string& mode,
+                               std::int64_t interval_minutes,
+                               int timezone_offset_minutes,
+                               const std::string& session_basis) {
+    const BatchViews views = require_batch(
+        timestamps, open, high, low, close, volume, flags);
+    std::unique_ptr<stockbuild::KBarColumns> columns;
+    {
+        py::gil_scoped_release release;
+        columns = std::make_unique<stockbuild::KBarColumns>(stockbuild::resample_kbars(
+            {static_cast<const std::int64_t*>(views.timestamps.ptr),
+             static_cast<std::size_t>(views.rows)},
+            {static_cast<const double*>(views.open.ptr), static_cast<std::size_t>(views.rows)},
+            {static_cast<const double*>(views.high.ptr), static_cast<std::size_t>(views.rows)},
+            {static_cast<const double*>(views.low.ptr), static_cast<std::size_t>(views.rows)},
+            {static_cast<const double*>(views.close.ptr), static_cast<std::size_t>(views.rows)},
+            {static_cast<const double*>(views.volume.ptr), static_cast<std::size_t>(views.rows)},
+            {static_cast<const std::uint32_t*>(views.flags.ptr),
+             static_cast<std::size_t>(views.rows)},
+            mode, interval_minutes, timezone_offset_minutes, session_basis));
+    }
+    return kbar_columns_payload(std::move(columns));
+}
+
+py::dict indicator_core_native(const py::array& close,
+                               int ma_period,
+                               int rsi_period,
+                               int macd_fast,
+                               int macd_slow,
+                               int macd_signal,
+                               int bb_period,
+                               double bb_std_up,
+                               double bb_std_down,
+                               const std::string& bb_ma_type) {
+    const py::buffer_info info = require_column<double>(close, "close");
+    std::unique_ptr<stockbuild::IndicatorColumns> columns;
+    {
+        py::gil_scoped_release release;
+        columns = std::make_unique<stockbuild::IndicatorColumns>(
+            stockbuild::calculate_indicator_core(
+                {static_cast<const double*>(info.ptr), static_cast<std::size_t>(info.shape[0])},
+                ma_period, rsi_period, macd_fast, macd_slow, macd_signal,
+                bb_period, bb_std_up, bb_std_down, bb_ma_type));
+    }
+    stockbuild::IndicatorColumns* raw = columns.release();
+    py::capsule owner(raw, [](void* pointer) {
+        delete static_cast<stockbuild::IndicatorColumns*>(pointer);
+    });
+    py::dict result;
+    result["rows"] = raw->sma.size();
+    result["sma"] = vector_view(raw->sma, owner);
+    result["ema"] = vector_view(raw->ema, owner);
+    result["wma"] = vector_view(raw->wma, owner);
+    result["rsi"] = vector_view(raw->rsi, owner);
+    result["macd"] = vector_view(raw->macd, owner);
+    result["signal"] = vector_view(raw->signal, owner);
+    result["hist"] = vector_view(raw->hist, owner);
+    result["bb_mid"] = vector_view(raw->bb_mid, owner);
+    result["bb_std"] = vector_view(raw->bb_std, owner);
+    result["bb_upper"] = vector_view(raw->bb_upper, owner);
+    result["bb_lower"] = vector_view(raw->bb_lower, owner);
+    result["bb_width"] = vector_view(raw->bb_width, owner);
+    return result;
+}
+
 }  // namespace
 
 PYBIND11_MODULE(_stockbuild_native, module) {
-    module.doc() = "StockBuild native ABI and ADR-146 read-only SQLite range buffers";
+    module.doc() = "StockBuild ADR-147 native KBar data and indicator core";
     module.def("abi_info", &abi_info);
     module.def("handshake", &handshake, py::arg("expected_abi"), py::arg("expected_schema"));
     module.def("inspect_kbars", &inspect_kbars,
@@ -275,4 +353,16 @@ PYBIND11_MODULE(_stockbuild_native, module) {
                py::arg("database_path"), py::arg("sqlite_library_path"),
                py::arg("symbol"), py::arg("asset_type"), py::arg("timeframe"),
                py::arg("start_ts") = py::none(), py::arg("end_ts") = py::none());
+    module.def("resample_kbars", &resample_kbars_native,
+               py::arg("timestamps"), py::arg("open"), py::arg("high"), py::arg("low"),
+               py::arg("close"), py::arg("volume"), py::arg("flags"), py::arg("mode"),
+               py::arg("interval_minutes") = 0,
+               py::arg("timezone_offset_minutes") = 0,
+               py::arg("session_basis") = "all");
+    module.def("indicator_core", &indicator_core_native,
+               py::arg("close"), py::arg("ma_period") = 20,
+               py::arg("rsi_period") = 14, py::arg("macd_fast") = 12,
+               py::arg("macd_slow") = 26, py::arg("macd_signal") = 9,
+               py::arg("bb_period") = 20, py::arg("bb_std_up") = 2.0,
+               py::arg("bb_std_down") = 2.0, py::arg("bb_ma_type") = "SMA");
 }

@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <type_traits>
+#include <vector>
 
 #include "stockbuild/version.hpp"
 
@@ -17,6 +18,20 @@ struct KBarRecord final {
     double volume;
     std::uint32_t flags;
     std::uint32_t reserved;
+};
+
+struct KBarColumns final {
+    bool readonly{false};
+    bool query_only{false};
+    std::int64_t schema_version{0};
+    std::int64_t data_version{0};
+    std::vector<std::int64_t> timestamps;
+    std::vector<double> open;
+    std::vector<double> high;
+    std::vector<double> low;
+    std::vector<double> close;
+    std::vector<double> volume;
+    std::vector<std::uint32_t> flags;
 };
 
 static_assert(std::is_standard_layout_v<KBarRecord>);

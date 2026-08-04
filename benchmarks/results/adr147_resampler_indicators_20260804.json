@@ -1,0 +1,94 @@
+{
+  "compiler": "MSVC x64 (2022 VsDevCmd)",
+  "environment": {
+    "cpu_count": 12,
+    "machine": "AMD64",
+    "packages": {
+      "numpy": "2.4.6",
+      "pandas": "3.0.3"
+    },
+    "platform": "Windows-10-10.0.19045-SP0",
+    "processor": "Intel64 Family 6 Model 165 Stepping 5, GenuineIntel",
+    "python": "3.14.5",
+    "python_executable": "python.exe",
+    "python_implementation": "CPython",
+    "release": "10",
+    "system": "Windows"
+  },
+  "native_module_sha256": "9cad8838e5e7220e803f4157f96961f7ed8450cc7bacc499e3436a10b42f8261",
+  "repeats": 3,
+  "report_schema_version": 1,
+  "result": {
+    "all_indicator_columns_readonly": true,
+    "all_resample_columns_readonly": true,
+    "indicator_rows": 1000000,
+    "indicator_speedup_vs_python": 25.6743791,
+    "last_hist": 0.14087049,
+    "max_abs_error_x1e12_by_indicator": {
+      "bb_lower": 1295.26256387,
+      "bb_mid": 5.1159077,
+      "bb_std": 649.15370301,
+      "bb_upper": 1301.34480969,
+      "bb_width": 1429.01246392,
+      "ema": 0.0,
+      "hist": 0.0,
+      "macd": 0.0,
+      "rsi": 0.0,
+      "signal": 0.0,
+      "sma": 5.1159077,
+      "wma": 0.08526513
+    },
+    "native_indicator_rows_per_second": 7318688.63739994,
+    "native_resample_rows_per_second": 25336404.10640312,
+    "resample_speedup_vs_python": 1.20173352,
+    "resampled_rows": 200000
+  },
+  "rows": 1000000,
+  "timings": {
+    "native_indicators": {
+      "max_ms": 138.5868,
+      "median_ms": 136.6365,
+      "min_ms": 132.0665,
+      "samples_ms": [
+        132.0665,
+        138.5868,
+        136.6365
+      ]
+    },
+    "native_resample": {
+      "max_ms": 39.8072,
+      "median_ms": 39.4689,
+      "min_ms": 38.473,
+      "samples_ms": [
+        38.473,
+        39.8072,
+        39.4689
+      ]
+    },
+    "python_pandas_indicators": {
+      "max_ms": 3520.2683,
+      "median_ms": 3508.0573,
+      "min_ms": 3500.9077,
+      "samples_ms": [
+        3520.2683,
+        3508.0573,
+        3500.9077
+      ]
+    },
+    "python_pandas_resample": {
+      "max_ms": 48.4525,
+      "median_ms": 47.4311,
+      "min_ms": 45.6795,
+      "samples_ms": [
+        45.6795,
+        47.4311,
+        48.4525
+      ]
+    }
+  },
+  "warmups": 1,
+  "workload": {
+    "indicators": "SMA/EMA/WMA(20), RSI(14), MACD(12,26,9), BB(20,2,2)",
+    "resample": "1-minute to 5-minute OHLCV"
+  }
+}

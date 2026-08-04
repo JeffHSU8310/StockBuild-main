@@ -128,7 +128,7 @@ def build(build_dir=DEFAULT_BUILD_DIR, config='Release', sanitizers=False):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description='Build StockBuild ADR-145 native foundation')
+    parser = argparse.ArgumentParser(description='Build StockBuild native core')
     parser.add_argument('--build-dir', default=str(DEFAULT_BUILD_DIR))
     parser.add_argument('--config', default='Release', choices=('Debug', 'Release'))
     parser.add_argument('--sanitizers', action='store_true')
