@@ -50,6 +50,9 @@ PITFALLS P-27）。它們存在的唯一理由就是「可離線單元測試」�
 > 規劃期、尚未切換產品路徑。在 ADR-143 各 Phase 通過功能等價與回退門檻以前，
 > 本文件描述的 tkinter + Matplotlib、Python `core/` 與交易安全界線仍是唯一現況；
 > 不得因目標架構已寫入 ADR，就提前刪除或繞過目前的已驗證實作。
+> ADR-143 的資料邊界已進一步定案為「Python 是 SQLite 唯一 writer，C++ 只做
+> read-only snapshot/range query」；自訂策略則是「使用者寫受限 Python Strategy
+> Language、編譯成 IR 後由 C++ 執行」。兩者同樣是目標狀態，尚未實作。
 
 ---
 

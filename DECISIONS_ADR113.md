@@ -1154,3 +1154,22 @@ Phase 0 golden differential fixtures 尚未開始，因此目前 tkinter／Matpl
 Python core 仍是唯一正式路徑，也沒有新的實機驗證項目可宣稱通過。
 本次純文件／架構變更後已重跑 `test_core` 800 項、`test_brokers` 43 項（0 略過）、
 `diag_repro_issues` 63 項、`diag_crossref` 與全專案 `py_compile`，全部通過。
+
+## 追記二十六：ADR-143 SQLite 與自訂策略語言決策
+
+使用者補充兩項必要條件後，ADR-143 已明確定案：
+
+1. SQLite 不只保存 K 棒；未來 C++ 會以 read-only snapshot 直接執行 coverage、
+   range／incremental query 並建立 native 欄式 buffer。完整 coverage 命中時 API
+   呼叫必須為 0。為避免重演連線未關閉／鎖庫，Python 保持唯一 writer 與 schema
+   owner，C++ statement、transaction、connection 全部以 RAII 收尾。
+2. 自訂策略的標準答案是**使用者寫受限 Python Strategy Language，C++ 執行**。
+   Python AST 先編譯為 typed Strategy IR；不能轉換的舊動態 Python 明示為較慢的
+   訊號相容模式，但事件、部位、風控、成交、成本與績效仍由 C++ 核心掌管。
+   任意 C++ DLL 不列為一般使用者策略格式。
+
+以上仍屬 ADR 規劃追記，尚未建立 native SQL reader 或 Strategy IR compiler，
+因此沒有可宣稱完成的產品功能或實機驗證。
+本次純文件追記後已重跑 `test_core` 800 項、`test_brokers` 43 項（0 略過）、
+`diag_repro_issues` 63 項、`diag_crossref` 與全專案 `py_compile`，全部通過；
+Windows 測試使用 Python UTF-8 模式，避免系統 CP950 誤判子行程輸出。
