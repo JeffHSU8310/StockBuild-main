@@ -1218,3 +1218,32 @@ CMake 已提供 sanitizer 選項。後續確認本機 Windows 10 不在 Visual S
   查詢延遲、記憶體峰值與關閉程式後 DB／WAL／SHM 無鎖。
 - 本階段沒有變更正式交易路徑，因此不新增真實下單測試；ADR-139 等既有實機項目
   仍維持原狀，不能因 native 基礎通過而視為完成。
+
+## 追記二十九：ADR-146 SQLite range query 與 C++ KBar buffer
+
+已完成 `_stockbuild_native` 0.2.0 的 prepared SQLite range reader。C++ 使用
+read-only/query-only 短連線，依無界／單邊／雙邊範圍選擇可使用複合索引的 SQL，
+直接把 timestamp/OHLCV/flags 填入七個 SoA vectors；pybind11 以共享 capsule 建立
+唯讀 contiguous NumPy views，不產生逐根 Python object。Python 仍是唯一 SQLite
+writer，正式 GUI、下載、回測、策略、選股與送單路徑尚未切換。
+
+百萬根 differential 首次發現 pandas 3 對秒級 SQLite timestamp 保留 microseconds
+resolution，原先直接取 `.asi8` 會讓宣稱為 nanoseconds 的 ABI 數值相差 1,000 倍；
+已在 bridge 固定先 `as_unit('ns')` 並加入秒級／9 位小數秒回歸。修正後 C++ 與
+Python 七欄逐值相等。本機 warm benchmark：native 625.802 ms、Python
+`sqlite3→pandas→NumPy` 2727.919 ms，提升 4.359 倍（約 1,597,951 根／秒），
+`EXPLAIN QUERY PLAN` 命中 `idx_kbars_lookup`。
+
+合併前驗證：`test_core` 811 項、`test_brokers` 43 項、`diag_repro_issues` 63 項、
+Release native 19 項、MSVC ASan native 19 項、`diag_crossref` 與 67 個 Python 檔案
+`py_compile` 全數通過。第一次 crossref 在 CP950 終端只因無法輸出 Unicode 勾號而
+中止；依既有 Windows 規則設定 `PYTHONUTF8=1` 後通過，檢查本身沒有斷鏈。
+
+### 待使用者實機驗證
+
+- 用現有真實十年日 K／大量分 K SQLite，核對同商品／週期的首尾時間、K 棒數、
+  OHLCV 與 Python 畫面一致，並記錄查詢延遲與行程記憶體峰值。
+- 在程式正常關閉與查詢錯誤後，確認真實 DB／WAL／SHM 沒有殘留占用；本階段的
+  synthetic Windows 測試已可立即刪庫，但不能冒充使用者長時間操作驗證。
+- 本階段沒有改正式下載或交易路由，不需要也不應用真實下單驗證效能；正式路徑
+  切換必須等後續 resampler／indicator differential 與 feature flag ADR。

@@ -4,6 +4,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -28,7 +30,8 @@ py::buffer_info require_column(const py::array& value, const char* name) {
         !value.dtype().is(py::dtype::of<T>())) {
         throw std::invalid_argument(std::string(name) + " dtype 不符合 KBar ABI");
     }
-    if (!info.strides.empty() && info.strides[0] != static_cast<py::ssize_t>(sizeof(T))) {
+    if (info.shape[0] > 1 && !info.strides.empty() &&
+        info.strides[0] != static_cast<py::ssize_t>(sizeof(T))) {
         throw std::invalid_argument(std::string(name) + " 必須是 C-contiguous");
     }
     return info;
@@ -196,10 +199,63 @@ py::dict sqlite_probe(const std::string& database_path,
     return result;
 }
 
+template <typename T>
+py::array vector_view(std::vector<T>& values, const py::object& owner) {
+    const std::vector<py::ssize_t> shape{static_cast<py::ssize_t>(values.size())};
+    const std::vector<py::ssize_t> strides{static_cast<py::ssize_t>(sizeof(T))};
+    return py::array(py::dtype::of<T>(), shape, strides, values.data(), owner);
+}
+
+py::dict sqlite_range(const std::string& database_path,
+                      const std::string& sqlite_library_path,
+                      const std::string& symbol,
+                      const std::string& asset_type,
+                      const std::string& timeframe,
+                      const std::optional<std::string>& start_ts,
+                      const std::optional<std::string>& end_ts) {
+    std::unique_ptr<stockbuild::KBarColumns> columns;
+    {
+        py::gil_scoped_release release;
+        columns = std::make_unique<stockbuild::KBarColumns>(stockbuild::read_kbars_range(
+            database_path, sqlite_library_path, symbol, asset_type, timeframe, start_ts, end_ts));
+    }
+    stockbuild::KBarColumns* raw = columns.release();
+    py::capsule owner(raw, [](void* pointer) {
+        delete static_cast<stockbuild::KBarColumns*>(pointer);
+    });
+
+    py::dict result;
+    result["readonly"] = raw->readonly;
+    result["query_only"] = raw->query_only;
+    result["schema_version"] = raw->schema_version;
+    result["data_version"] = raw->data_version;
+    result["rows"] = raw->timestamps.size();
+    result["timestamps"] = vector_view(raw->timestamps, owner);
+    result["open"] = vector_view(raw->open, owner);
+    result["high"] = vector_view(raw->high, owner);
+    result["low"] = vector_view(raw->low, owner);
+    result["close"] = vector_view(raw->close, owner);
+    result["volume"] = vector_view(raw->volume, owner);
+    result["flags"] = vector_view(raw->flags, owner);
+    return result;
+}
+
+std::string sqlite_range_query_plan(const std::string& database_path,
+                                    const std::string& sqlite_library_path,
+                                    const std::string& symbol,
+                                    const std::string& asset_type,
+                                    const std::string& timeframe,
+                                    const std::optional<std::string>& start_ts,
+                                    const std::optional<std::string>& end_ts) {
+    py::gil_scoped_release release;
+    return stockbuild::explain_kbars_range(database_path, sqlite_library_path,
+                                           symbol, asset_type, timeframe, start_ts, end_ts);
+}
+
 }  // namespace
 
 PYBIND11_MODULE(_stockbuild_native, module) {
-    module.doc() = "StockBuild ADR-145 native ABI and read-only SQLite foundation";
+    module.doc() = "StockBuild native ABI and ADR-146 read-only SQLite range buffers";
     module.def("abi_info", &abi_info);
     module.def("handshake", &handshake, py::arg("expected_abi"), py::arg("expected_schema"));
     module.def("inspect_kbars", &inspect_kbars,
@@ -211,4 +267,12 @@ PYBIND11_MODULE(_stockbuild_native, module) {
     module.def("sqlite_probe", &sqlite_probe,
                py::arg("database_path"), py::arg("sqlite_library_path"),
                py::arg("symbol"), py::arg("asset_type"), py::arg("timeframe"));
+    module.def("sqlite_range", &sqlite_range,
+               py::arg("database_path"), py::arg("sqlite_library_path"),
+               py::arg("symbol"), py::arg("asset_type"), py::arg("timeframe"),
+               py::arg("start_ts") = py::none(), py::arg("end_ts") = py::none());
+    module.def("sqlite_range_query_plan", &sqlite_range_query_plan,
+               py::arg("database_path"), py::arg("sqlite_library_path"),
+               py::arg("symbol"), py::arg("asset_type"), py::arg("timeframe"),
+               py::arg("start_ts") = py::none(), py::arg("end_ts") = py::none());
 }
