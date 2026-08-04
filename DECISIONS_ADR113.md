@@ -1140,3 +1140,17 @@ ADR-142 建庫後，若快速下載區間已涵蓋 SQLite 尾端的完整增量�
 相同起點重複背景下載；跨週期且資料範圍不足時仍允許補抓缺口。離線驗證結果：
 `test_core` 800 項、`test_brokers` 43 項（0 略過）、`diag_repro_issues`
 63 項、`diag_crossref` 與全專案 `py_compile` 全部通過。真實券商登入／下單未執行。
+
+## 追記二十五：ADR-143 C++ 核心與 Qt 圖表移植規劃狀態
+
+| ADR | 內容 | 實機驗證 |
+|---|---|---|
+| ADR-143 | 以 StockBuild 現有語意為基準，分階段導入 C++ 指標／策略／回測／最佳化／選股核心與 Qt viewport 圖表 | ⏳ 僅完成架構與驗收計畫，尚未實作產品路徑 |
+
+SmartStock 的 Qt `QPicture` 與 C++ 線性運算只作為技術參考，不直接複製其 DLL。
+ADR-143 已把全部內建條件、買進持有／DCA、看 A 做 B、盤中停損、自訂 Python
+策略相容模式、終極波段、最佳化、全市場選股與選股回測列入功能等價門檻；
+Phase 0 golden differential fixtures 尚未開始，因此目前 tkinter／Matplotlib 與
+Python core 仍是唯一正式路徑，也沒有新的實機驗證項目可宣稱通過。
+本次純文件／架構變更後已重跑 `test_core` 800 項、`test_brokers` 43 項（0 略過）、
+`diag_repro_issues` 63 項、`diag_crossref` 與全專案 `py_compile`，全部通過。

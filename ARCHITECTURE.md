@@ -46,10 +46,10 @@
 **鐵律**：`core/` 與 `data/` 必須維持零 tkinter、零 shioaji 依賴（鐵則 11 / ADR-009 /
 PITFALLS P-27）。它們存在的唯一理由就是「可離線單元測試」。
 
-> ⚠️ 若別處記憶提到 PySide6 + pyqtgraph + 三層 core/data/chart 架構，那是**另一條
-> 技術路線**，與本專案 tkinter+shioaji 主線不是同一套。本專案的 `core/`/`data/`
-> 是 ADR-009 獨立決定的，命名雖相似，範圍目前只涵蓋純邏輯與設定 I/O，GUI 本體
-> 仍在 `stock_app_pro.py`。兩者要合併須先開 ADR。
+> ⚠️ ADR-143 已接受「C++ 運算核心 + Qt 圖表」為**分階段目標架構**，但目前仍在
+> 規劃期、尚未切換產品路徑。在 ADR-143 各 Phase 通過功能等價與回退門檻以前，
+> 本文件描述的 tkinter + Matplotlib、Python `core/` 與交易安全界線仍是唯一現況；
+> 不得因目標架構已寫入 ADR，就提前刪除或繞過目前的已驗證實作。
 
 ---
 

@@ -1420,3 +1420,25 @@
 - **正確做法**：所有週期 K 線以 SQLite 複合主鍵 upsert；先讀舊歷史，再用
   當次 API 返回更新重疊與新日期。本地已滿十年就不再抓深層源。
 - **出處**：ADR-142。
+
+### P-121　「C++ 跑得快」不代表它能取代既有回測與策略語意
+- **症狀**：換上 C++ 後 benchmark 漂亮，但自訂策略、看 A 做 B、盤中停損、
+  籌碼防未來函數、DCA、終極波段或交易明細其中一部分消失；畫面仍顯示一份
+  看似合理的報酬率，直到實盤才發現兩套邏輯不同。
+- **根因**：只拿簡單 MA 交叉做速度樣本，然後把所有 strategy dict 都導向同一條
+  native 路徑；測試只驗「有結果」而沒有逐筆比對 intent、成交與狀態。
+- **正確做法**：Python 現行行為是 authoritative reference；每個 native 子系統
+  都先走 shadow mode，以 golden differential test 逐根比較 intent/runtime、
+  逐筆比較交易／費用／equity／markers／metrics。第五節功能清冊未全過的引擎
+  不得成為預設，也不得以硬編績效欄位補齊缺少的輸出。
+- **出處**：ADR-143。
+
+### P-122　跨 Python/C++ 的 KBar 結構不能靠兩邊各自手寫一份
+- **症狀**：DLL 可載入、函式也回傳，但相同資料的 Python 與 C++ 報酬不同；
+  大資料偶發存取越界，或 C++ 很快、時間卻都耗在 Python 逐根組 ctypes。
+- **根因**：欄位型別、順序、padding、字串長度或 timestamp 表示不一致，卻沒有
+  ABI 版本與 offset 測試；逐根 Python object 轉 native struct 又產生大量邊界成本。
+- **正確做法**：只有一份帶版本的欄式 schema，採連續 NumPy buffer／pybind11
+  批次傳入；C++ `static_assert` 與 Python dtype/stride 測試同時核對欄位大小、
+  offset、endianness。版本或 layout 不符立即拒載，不可猜測或靜默 fallback。
+- **出處**：ADR-143（SmartStock 唯讀架構檢查的直接教訓）。
