@@ -61,11 +61,74 @@ from core import volume_profile
 from core import fundamental_parser
 from core import market_screener
 from core import screener_backtest
+from core import migration_baseline
 from data import config_store
 from data import taifex_store
 from data import chips_store
 from data import market_store
 from data import kbars_store
+from benchmarks import adr144_phase0
+
+
+class TestMigrationBaselineADR144(unittest.TestCase):
+    """Phase 0 黃金輸出必須真的能攔截語意改變，不是只留一個 hash 裝飾。"""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.fixture_path = os.path.join(
+            os.path.dirname(__file__), 'fixtures', 'adr144_phase0_smoke.json')
+        with open(cls.fixture_path, 'r', encoding='utf-8') as handle:
+            cls.expected = json.load(handle)
+        cls.actual = adr144_phase0.build_golden('smoke')
+
+    def test_smoke_fixture_is_reproducible(self):
+        self.assertTrue(migration_baseline.verify_golden(self.expected, self.actual))
+        self.assertEqual(self.actual['bundle_hash'],
+                         '992478ff135d19723182f1fee9f6a32cdc8f343a70af03502028fb1148024fc4')
+
+    def test_dictionary_order_does_not_change_hash(self):
+        self.assertEqual(migration_baseline.stable_hash({'b': 2, 'a': 1.0}),
+                         migration_baseline.stable_hash({'a': 1.0, 'b': 2}))
+
+    def test_mutated_trade_pnl_is_detected(self):
+        broken = json.loads(json.dumps(self.actual, ensure_ascii=False))
+        broken['components']['backtest']['trades'][0]['pnl'] += 1.0
+        differences = migration_baseline.compare_golden(self.expected, broken)
+        self.assertTrue(any('components.backtest.trades[0].pnl' in item
+                            for item in differences), differences)
+        with self.assertRaises(migration_baseline.GoldenMismatch):
+            migration_baseline.verify_golden(self.expected, broken)
+
+    def test_mutated_screener_result_is_detected(self):
+        broken = json.loads(json.dumps(self.actual, ensure_ascii=False))
+        broken['components']['screener']['rows'].pop()
+        differences = migration_baseline.compare_golden(self.expected, broken)
+        self.assertTrue(any('components.screener.rows' in item and 'length' in item
+                            for item in differences), differences)
+
+    def test_sqlite_download_contract_and_equal_loaded_data(self):
+        cases = self.actual['components']['sqlite']
+        self.assertEqual(cases['complete_hit']['api_calls'], 0)
+        self.assertEqual(cases['tail_increment']['api_calls'], 1)
+        self.assertEqual(cases['new_symbol']['api_calls'], 1)
+        loaded_hashes = {case['loaded_hash'] for case in cases.values()}
+        self.assertEqual(len(loaded_hashes), 1)
+        self.assertTrue(all(case['loaded_rows'] == 40 for case in cases.values()))
+        self.assertTrue(all(case['uses_composite_index'] for case in cases.values()))
+
+    def test_sqlite_readonly_connection_is_closed_on_windows(self):
+        # _sqlite_scenario 離開 TemporaryDirectory 時會立刻刪 DB；若 query-plan
+        # connection 只 commit 沒 close，Windows 會以 WinError 32 讓本測試失敗。
+        case, plan = adr144_phase0._sqlite_scenario(40)
+        self.assertEqual(case['api_calls'], 0)
+        self.assertTrue(case['uses_composite_index'])
+        self.assertTrue(any('INDEX' in item.upper() for item in plan))
+
+    def test_full_profile_keeps_adr143_scale(self):
+        full = adr144_phase0.PROFILES['full']
+        self.assertEqual(full['backtest_bars'], 100_000)
+        self.assertEqual(len(full['optimizer_fast']) * len(full['optimizer_slow']), 500)
+        self.assertEqual((full['screener_symbols'], full['screener_bars']), (2_000, 2_600))
 
 
 class TestChartViewport(unittest.TestCase):

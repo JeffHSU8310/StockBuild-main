@@ -46,8 +46,9 @@
 **鐵律**：`core/` 與 `data/` 必須維持零 tkinter、零 shioaji 依賴（鐵則 11 / ADR-009 /
 PITFALLS P-27）。它們存在的唯一理由就是「可離線單元測試」。
 
-> ⚠️ ADR-143 已接受「C++ 運算核心 + Qt 圖表」為**分階段目標架構**，但目前仍在
-> 規劃期、尚未切換產品路徑。在 ADR-143 各 Phase 通過功能等價與回退門檻以前，
+> ⚠️ ADR-143 已接受「C++ 運算核心 + Qt 圖表」為**分階段目標架構**；ADR-144
+> 已開始 Phase 0 的 golden fixture 與基準紀錄，但尚未切換產品路徑。在 ADR-143
+> 各 Phase 通過功能等價與回退門檻以前，
 > 本文件描述的 tkinter + Matplotlib、Python `core/` 與交易安全界線仍是唯一現況；
 > 不得因目標架構已寫入 ADR，就提前刪除或繞過目前的已驗證實作。
 > ADR-143 的資料邊界已進一步定案為「Python 是 SQLite 唯一 writer，C++ 只做
@@ -128,6 +129,9 @@ PITFALLS P-27）。它們存在的唯一理由就是「可離線單元測試」�
   委託欄位驗證、**期貨最近月合約挑選**、報告排版。官方範例寫死的月份合約
   （`TXFE6`）會過期，所以挑月份是執行期動態解析而不是常數。
   真正的連線與送單在 `brokers/sinopac.SinopacApiTestSession`。
+- `migration_baseline.py`（ADR-144）：C++／Qt 移植前的 canonical JSON、SHA-256
+  與逐欄 golden comparison。它只記錄 Python authoritative output，不含產品路由、
+  native fallback 或交易規則；交易損益／選股名單的突變必須讓測試轉紅。
 - `palette.py`（ADR-138）：指標線色盤。**舊有 8 色排最前面且標籤字串不可
   更動** —— `indicator_settings.json` 存的是**標籤字串**不是色碼，標籤一改，
   使用者存過的顏色會全部對不上而靜默退回預設色。後面接 255 系統色
@@ -156,6 +160,10 @@ PITFALLS P-27）。它們存在的唯一理由就是「可離線單元測試」�
 - `diag_repro_issues.py`：重現/驗證使用者回報問題的診斷腳本（版面 set_position、
   委託 seed、小數點即時轉換等）。
 - 兩個 diag 是開發除錯用，不隨 App 發布。
+- `benchmarks/adr144_phase0.py`：完全離線的 smoke／reference／full 基準。輸出必須
+  帶環境、尺度、fixture hash、warm-up 與 samples；`tests/fixtures/` 凍結 smoke
+  golden，`benchmarks/results/` 保存不含本機絕對路徑的實際報告。full profile
+  固定為 100,000 根回測、500 組最佳化、2,000 檔 × 2,600 日 K，不可縮水冒充。
 
 ---
 

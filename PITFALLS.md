@@ -1464,3 +1464,14 @@
   decision；C++ 仍掌管事件、風控、成交與績效。使用者 C++ plugin 不在標準功能內，
   未來若要支援必須另開 ADR 並隔離行程。
 - **出處**：ADR-143 第八節。
+
+### P-125　沒有環境與黃金輸出的 benchmark，只會製造漂亮但無法驗證的數字
+- **症狀**：某次提交宣稱快十倍，卻換了電腦、縮短歷史、減少參數組合或只比較
+  總損益；native 少算費用、markers 或選股錯誤仍被當成「等價」。
+- **根因**：把計時結果與輸入／輸出分開保存，沒有 fixture version、資料尺度、
+  套件版本、warm-up、samples、component hash，也沒有逐欄差異位置。
+- **正確做法**：所有移植基準使用 ADR-144 的版本化 synthetic fixture；報告必帶
+  環境與 workload，輸出用 canonical JSON + SHA-256，交易／equity／markers／
+  metrics／排名／選股逐欄比較。smoke 只供快速回歸，full 尺度不可被縮短取代；
+  刻意改壞交易損益和選股名單時測試必須轉紅。
+- **出處**：ADR-144。
