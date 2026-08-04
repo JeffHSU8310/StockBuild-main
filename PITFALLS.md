@@ -1498,3 +1498,13 @@
   stride、列數；C++ `static_assert` 鎖定 size／alignment／offset，Python 端用版本握手
   重驗同一份 layout。錯 dtype、切片 stride、列數與版本都必須有拒絕測試。
 - **出處**：ADR-145。
+
+### P-128　`DatetimeIndex.asi8` 不保證單位永遠是 nanoseconds
+- **症狀**：同一批 SQLite KBar 的 C++ timestamp 與 Python timestamp 全部相差
+  1,000 倍；價格與列數都正確，只有時間軸落在完全錯誤的年代。
+- **根因**：pandas 3 會保留解析輸入時的 `datetime64[s/ms/us/ns]` 單位，`.asi8`
+  只回傳該單位下的整數，不會因欄位名稱叫 `timestamp_ns` 自動轉成 nanoseconds。
+- **正確做法**：跨 KBar ABI 前一律先 `DatetimeIndex.as_unit('ns')` 再取 `.asi8`；
+  C++ ISO-8601 parser 也固定輸出 UTC int64 nanoseconds。differential fixture 必須包含
+  秒級 SQLite 字串與 9 位小數秒，不能只測原本就是 `datetime64[ns]` 的 DataFrame。
+- **出處**：ADR-146 百萬根 SQLite differential。

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(stockbuild_native VERSION 0.1.0 LANGUAGES CXX)
+project(stockbuild_native VERSION 0.2.0 LANGUAGES CXX)
 
 option(STOCKBUILD_BUILD_PYTHON "Build the pybind11 extension" ON)
 option(STOCKBUILD_ENABLE_SANITIZERS "Enable supported compiler sanitizers" OFF)

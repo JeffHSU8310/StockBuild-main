@@ -132,6 +132,10 @@ PITFALLS P-27）。它們存在的唯一理由就是「可離線單元測試」�
 - `migration_baseline.py`（ADR-144）：C++／Qt 移植前的 canonical JSON、SHA-256
   與逐欄 golden comparison。它只記錄 Python authoritative output，不含產品路由、
   native fallback 或交易規則；交易損益／選股名單的突變必須讓測試轉紅。
+- `native_bridge.py`（ADR-145/146）：驗證 native ABI 與 KBar dtype/stride，並把
+  C++ read-only prepared SQLite range query 產生的七個欄式 vectors 接成共享 capsule
+  的唯讀 NumPy views。Python 仍是 SQLite 唯一 writer；目前正式 GUI／下載／回測
+  尚未切到此 reader。
 - `palette.py`（ADR-138）：指標線色盤。**舊有 8 色排最前面且標籤字串不可
   更動** —— `indicator_settings.json` 存的是**標籤字串**不是色碼，標籤一改，
   使用者存過的顏色會全部對不上而靜默退回預設色。後面接 255 系統色
@@ -298,7 +302,7 @@ _tg_poll_worker (背景 daemon,getUpdates long polling)
 | 改動範圍 | 驗證方式 |
 |---|---|
 | `core/`、`data/` 純邏輯 | `python tests/test_core.py`（必跑）+ 補對應測試 |
-| `native/`、`core/native_bridge.py`、KBar ABI、C++ SQLite reader | `python tests/test_native.py`（必跑；乾淨 MSVC x64 build + CTest + import + 100 萬根 zero-copy + SQLite 解鎖） |
+| `native/`、`core/native_bridge.py`、KBar ABI、C++ SQLite reader | `python tests/test_native.py`（必跑；乾淨 MSVC x64 build + CTest + import + 100 萬根 zero-copy + SQLite range differential／索引／snapshot／解鎖） |
 | 「每次重畫都會跑」的主圖附加判斷（盤勢判斷等） | diag 要**連續 `draw_chart()` 多次**再斷言日誌沒有增加（PITFALLS P-87）|
 | 任何跟交易時段有關的閘門 | `diag_repro_issues.run_case` 已統一把 `is_market_open`/`just_opened` 凍結住；需要別的值就**在案例內自己 patch**，不可依賴真實時鐘（P-94/P-97）|
 | `brokers/` 券商 adapter | `python tests/test_brokers.py`（必跑）；真實連線只能實機 |
@@ -335,9 +339,9 @@ D:\StockBuild-main\
 │   ├─ market_session.py    交易時段/開盤暖機/跨開盤判斷 (ADR-070/121/127)
 │   ├─ kbars_plan.py        kbars 分段門檻/段長的單一出處 (ADR-122)
 │   ├─ migration_baseline.py C++ 移植 golden/benchmark 基準 (ADR-144)
-│   ├─ native_bridge.py     Python/C++ ABI、欄式 KBar 與唯讀 SQLite 邊界 (ADR-145)
+│   ├─ native_bridge.py     Python/C++ ABI、欄式 KBar 與唯讀 SQLite range 邊界 (ADR-145/146)
 │   └─ order_rules.py
-├─ native/                 CMake/MSVC x64/pybind11 原生核心骨架 (ADR-145)
+├─ native/                 CMake/MSVC x64/pybind11 原生核心與 SQLite range buffers (ADR-145/146)
 │   ├─ include/stockbuild/  版本、KBar schema、SQLite reader 介面
 │   ├─ src/                 pybind11 module 與 SQLite RAII 實作
 │   ├─ tests/               C++ schema smoke test
@@ -353,7 +357,7 @@ D:\StockBuild-main\
 ├─ tests/
 │   ├─ test_core.py        core/ + data/ 離線單元測試
 │   ├─ test_brokers.py     brokers/ 離線測試 (照 SDK 原始碼複刻的假模組,ADR-111)
-│   └─ test_native.py      native ABI／載入／百萬根／SQLite RAII 回歸測試
+│   └─ test_native.py      native ABI／載入／百萬根／SQLite range／RAII 回歸測試
 ├─ diag_mock_tkinter.py    假 tkinter/mplfinance 環境 (開發用)
 ├─ diag_repro_issues.py    問題重現/驗證腳本 (開發用)
 ├─ broker_config.json      券商設定

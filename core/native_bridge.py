@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
-"""ADR-145：Python 與 StockBuild C++ core 的版本／欄式資料邊界。
+"""ADR-145/146：Python 與 StockBuild C++ core 的版本／欄式資料邊界。
 
-本檔只驗證 ABI、dtype、stride 與轉送批次資料，不包含策略、成交或風控規則。
+本檔只驗證 ABI、dtype、stride、SQLite range 與轉送批次資料，不包含策略、
+成交或風控規則。
 """
 from __future__ import annotations
 
@@ -58,6 +59,19 @@ class KBarBatch:
     def as_args(self):
         return (self.timestamps, self.open, self.high, self.low,
                 self.close, self.volume, self.flags)
+
+
+@dataclass(frozen=True)
+class SqliteRangeResult:
+    batch: KBarBatch
+    readonly: bool
+    query_only: bool
+    schema_version: int
+    data_version: int
+
+    @property
+    def rows(self):
+        return self.batch.rows
 
 
 def expected_abi_info():
@@ -121,7 +135,12 @@ def prepare_kbars(df, flags=None):
         raise KBarSchemaError('KBar timestamp 不可包含 NaT')
     if index.tz is not None:
         index = index.tz_convert('UTC').tz_localize(None)
-    timestamps = np.ascontiguousarray(index.asi8, dtype=np.int64)
+    try:
+        # pandas 3 會保留 s/ms/us 原始解析度；ABI v1 明確要求 nanoseconds，
+        # 不可直接使用未正規化的 asi8，否則同一時間可能相差 1,000 倍。
+        timestamps = np.ascontiguousarray(index.as_unit('ns').asi8, dtype=np.int64)
+    except (OverflowError, ValueError) as exc:
+        raise KBarSchemaError(f'KBar timestamp 無法表示為 int64 nanoseconds: {exc}') from exc
     columns = [_float_column(df, name) for name in ('Open', 'High', 'Low', 'Close', 'Volume')]
     if flags is None:
         flag_values = np.zeros(len(df), dtype=np.uint32)
@@ -182,3 +201,67 @@ def probe_sqlite(module, database_path, symbol, asset_type, timeframe,
     path = str(Path(database_path).resolve())
     lib = library_path or sqlite_library_path()
     return dict(module.sqlite_probe(path, lib, str(symbol), str(asset_type), str(timeframe)))
+
+
+def _range_boundary(value, name):
+    if value is None:
+        return None, None
+    try:
+        timestamp = pd.Timestamp(value)
+    except (TypeError, ValueError) as exc:
+        raise KBarSchemaError(f'{name} 必須可轉為 Timestamp: {exc}') from exc
+    if pd.isna(timestamp):
+        raise KBarSchemaError(f'{name} 不可為 NaT')
+    return timestamp, timestamp.isoformat()
+
+
+def _range_call_args(database_path, symbol, asset_type, timeframe,
+                     start=None, end=None, library_path=None):
+    path = str(Path(database_path).resolve())
+    lib = library_path or sqlite_library_path()
+    start_value, start_text = _range_boundary(start, 'start')
+    end_value, end_text = _range_boundary(end, 'end')
+    if start_value is not None and end_value is not None:
+        try:
+            reversed_range = start_value > end_value
+        except TypeError as exc:
+            raise KBarSchemaError('start 與 end 必須使用相容的時區') from exc
+        if reversed_range:
+            raise KBarSchemaError('start 不可晚於 end')
+    return (path, lib, str(symbol), str(asset_type), str(timeframe),
+            start_text, end_text)
+
+
+def read_sqlite_range(module, database_path, symbol, asset_type, timeframe,
+                      start=None, end=None, library_path=None):
+    """以 C++ prepared query 直接建立唯讀欄式 KBar buffers。"""
+    validate_abi_info(dict(module.abi_info()))
+    payload = dict(module.sqlite_range(*_range_call_args(
+        database_path, symbol, asset_type, timeframe, start, end, library_path)))
+    try:
+        batch = KBarBatch(
+            payload['timestamps'], payload['open'], payload['high'], payload['low'],
+            payload['close'], payload['volume'], payload['flags'])
+        validate_batch(batch)
+        if int(payload['rows']) != batch.rows:
+            raise KBarSchemaError('native rows metadata 與 KBar buffer 列數不一致')
+        if not bool(payload['readonly']) or not bool(payload['query_only']):
+            raise KBarSchemaError('native SQLite reader 未維持 readonly/query_only')
+        for column in batch.as_args():
+            column.setflags(write=False)
+        return SqliteRangeResult(
+            batch=batch,
+            readonly=bool(payload['readonly']),
+            query_only=bool(payload['query_only']),
+            schema_version=int(payload['schema_version']),
+            data_version=int(payload['data_version']),
+        )
+    except KeyError as exc:
+        raise KBarSchemaError(f'native SQLite range 缺少欄位: {exc}') from exc
+
+
+def sqlite_range_query_plan(module, database_path, symbol, asset_type, timeframe,
+                            start=None, end=None, library_path=None):
+    validate_abi_info(dict(module.abi_info()))
+    return str(module.sqlite_range_query_plan(*_range_call_args(
+        database_path, symbol, asset_type, timeframe, start, end, library_path)))

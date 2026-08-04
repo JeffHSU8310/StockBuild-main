@@ -1,0 +1,57 @@
+{
+  "compiler": "MSVC x64 (2022 VsDevCmd)",
+  "environment": {
+    "cpu_count": 12,
+    "machine": "AMD64",
+    "packages": {
+      "numpy": "2.4.6",
+      "pandas": "3.0.3"
+    },
+    "platform": "Windows-10-10.0.19045-SP0",
+    "processor": "Intel64 Family 6 Model 165 Stepping 5, GenuineIntel",
+    "python": "3.14.5",
+    "python_executable": "python.exe",
+    "python_implementation": "CPython",
+    "release": "10",
+    "system": "Windows"
+  },
+  "native_module_sha256": "58b302d864040553e934e1e1819712531facf0aa5120a575c2c8448d2e5229d3",
+  "repeats": 3,
+  "report_schema_version": 1,
+  "result": {
+    "all_columns_readonly": true,
+    "all_columns_zero_copy_views": true,
+    "checksum": 2001052500000.0,
+    "database_removed_after_read": true,
+    "first_timestamp_ns": 1704067200000000000,
+    "last_timestamp_ns": 1705067199000000000,
+    "native_rows_per_second": 1597950.78791345,
+    "query_plan": "SEARCH kbars USING INDEX idx_kbars_lookup (symbol=? AND asset_type=? AND timeframe=? AND ts>? AND ts<?)",
+    "rows": 1000000,
+    "speedup_vs_python": 4.35908064
+  },
+  "rows": 1000000,
+  "timings": {
+    "native_sqlite_to_columns": {
+      "max_ms": 631.0469,
+      "median_ms": 625.8015,
+      "min_ms": 622.4287,
+      "samples_ms": [
+        625.8015,
+        631.0469,
+        622.4287
+      ]
+    },
+    "python_sqlite_to_pandas_to_columns": {
+      "max_ms": 2736.5024,
+      "median_ms": 2727.9192,
+      "min_ms": 2719.9008,
+      "samples_ms": [
+        2736.5024,
+        2719.9008,
+        2727.9192
+      ]
+    }
+  },
+  "warmups": 1
+}
