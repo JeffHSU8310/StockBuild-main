@@ -1247,3 +1247,25 @@ Release native 19 項、MSVC ASan native 19 項、`diag_crossref` 與 67 個 Pyt
   synthetic Windows 測試已可立即刪庫，但不能冒充使用者長時間操作驗證。
 - 本階段沒有改正式下載或交易路由，不需要也不應用真實下單驗證效能；正式路徑
   切換必須等後續 resampler／indicator differential 與 feature flag ADR。
+
+## 追記三十：ADR-147 C++ resampler 與第一批指標核心
+
+已完成 `_stockbuild_native` 0.3.0 的 OHLCV resampler 與第一批指標核心。固定分鐘、
+自然日／週／月、期貨 all/day 日／週／月都以明確 timezone/session 契約聚合；
+SMA、EMA、WMA、RSI、MACD/Signal/Hist 與 Bollinger 欄位直接吃既有欄式 KBar
+buffer，計算時釋放 GIL，輸出由 capsule 管理且為 readonly NumPy views。正式 GUI、
+回測、策略及選股路徑仍未切換，native feature flag 維持關閉。
+
+1,000,000 根 synthetic 一分 K 的同機 benchmark：5 分 resample 中位數 39.469 ms，
+約為 pandas 1.202 倍；第一批指標中位數 136.637 ms，約為 pandas 25.674 倍。
+NaN mask 完全一致，最大絕對誤差為 Bollinger WIDTH 約 `1.429e-9`，在 ADR-147
+逐欄明定 tolerance 內。Release native 27 項、MSVC ASan native 27 項、
+`test_core` 811 項、`test_brokers` 43 項、`diag_repro_issues` 63 項、
+`diag_crossref` 與 68 個 Python 檔案 `py_compile` 全數通過。
+
+### 待使用者實機驗證
+
+- 以使用者實際長歷史股票／期貨資料涵蓋休市、夜盤與跨月，執行 Python/C++
+  shadow differential；目前 synthetic 與單元測試已過，不能冒充真實市場資料驗證。
+- GUI／回測／策略／選股正式接線屬後續階段，本次沒有新增可點按畫面；真實券商
+  登入、報價與下單未執行，也不在本次 shadow 核心範圍內。

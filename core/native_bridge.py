@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""ADR-145/146：Python 與 StockBuild C++ core 的版本／欄式資料邊界。
+"""ADR-145～147：Python 與 StockBuild C++ core 的版本／欄式資料邊界。
 
 本檔只驗證 ABI、dtype、stride、SQLite range 與轉送批次資料，不包含策略、
 成交或風控規則。
@@ -72,6 +72,31 @@ class SqliteRangeResult:
     @property
     def rows(self):
         return self.batch.rows
+
+
+@dataclass(frozen=True)
+class IndicatorBatch:
+    sma: np.ndarray
+    ema: np.ndarray
+    wma: np.ndarray
+    rsi: np.ndarray
+    macd: np.ndarray
+    signal: np.ndarray
+    hist: np.ndarray
+    bb_mid: np.ndarray
+    bb_std: np.ndarray
+    bb_upper: np.ndarray
+    bb_lower: np.ndarray
+    bb_width: np.ndarray
+
+    @property
+    def rows(self):
+        return int(self.sma.size)
+
+    def as_dict(self):
+        return {name: getattr(self, name) for name in (
+            'sma', 'ema', 'wma', 'rsi', 'macd', 'signal', 'hist',
+            'bb_mid', 'bb_std', 'bb_upper', 'bb_lower', 'bb_width')}
 
 
 def expected_abi_info():
@@ -265,3 +290,103 @@ def sqlite_range_query_plan(module, database_path, symbol, asset_type, timeframe
     validate_abi_info(dict(module.abi_info()))
     return str(module.sqlite_range_query_plan(*_range_call_args(
         database_path, symbol, asset_type, timeframe, start, end, library_path)))
+
+
+def _batch_from_native_payload(payload):
+    try:
+        batch = KBarBatch(
+            payload['timestamps'], payload['open'], payload['high'], payload['low'],
+            payload['close'], payload['volume'], payload['flags'])
+        validate_batch(batch)
+        if int(payload['rows']) != batch.rows:
+            raise KBarSchemaError('native rows metadata 與 KBar buffer 列數不一致')
+    except KeyError as exc:
+        raise KBarSchemaError(f'native KBar 結果缺少欄位: {exc}') from exc
+    for column in batch.as_args():
+        column.setflags(write=False)
+    return batch
+
+
+def resample_kbars(module, batch, mode, interval_minutes=0,
+                   timezone_offset_minutes=0, session_basis='all'):
+    """呼叫 ADR-147 C++ OHLCV resampler；目前只供 shadow/differential。"""
+    validate_abi_info(dict(module.abi_info()))
+    validate_batch(batch)
+    normalized_mode = str(mode).strip().lower()
+    allowed_modes = {
+        'fixed', 'day', 'week', 'month',
+        'future_day', 'future_week', 'future_month',
+    }
+    if normalized_mode not in allowed_modes:
+        raise KBarSchemaError(f'不支援的 resample mode: {mode!r}')
+    try:
+        interval = int(interval_minutes)
+        offset = int(timezone_offset_minutes)
+    except (TypeError, ValueError) as exc:
+        raise KBarSchemaError(f'resample interval/offset 必須是整數: {exc}') from exc
+    if normalized_mode == 'fixed' and interval <= 0:
+        raise KBarSchemaError('fixed resample 的 interval_minutes 必須大於 0')
+    if not -1440 <= offset <= 1440:
+        raise KBarSchemaError('timezone_offset_minutes 必須介於 -1440 與 1440')
+    basis = str(session_basis).strip().lower()
+    if normalized_mode.startswith('future_') and basis not in ('all', 'day'):
+        raise KBarSchemaError('期貨 session_basis 只接受 all 或 day')
+    payload = dict(module.resample_kbars(
+        *batch.as_args(), normalized_mode, interval, offset, basis))
+    return _batch_from_native_payload(payload)
+
+
+def _positive_period(value, name, minimum=1):
+    try:
+        period = int(str(value).strip())
+    except (TypeError, ValueError) as exc:
+        raise KBarSchemaError(f'{name} 必須是整數: {exc}') from exc
+    if period < minimum:
+        raise KBarSchemaError(f'{name} 必須大於等於 {minimum}')
+    return period
+
+
+def calculate_native_indicators(
+        module, batch, ma_period=20, rsi_period=14,
+        macd_fast=12, macd_slow=26, macd_signal=9,
+        bb_period=20, bb_std_up=2.0, bb_std_down=2.0, bb_ma_type='SMA'):
+    """計算 ADR-147 第一批 native 指標；輸出為共享 owner 的唯讀 arrays。"""
+    validate_abi_info(dict(module.abi_info()))
+    validate_batch(batch)
+    periods = (
+        _positive_period(ma_period, 'ma_period'),
+        _positive_period(rsi_period, 'rsi_period'),
+        _positive_period(macd_fast, 'macd_fast'),
+        _positive_period(macd_slow, 'macd_slow'),
+        _positive_period(macd_signal, 'macd_signal'),
+        _positive_period(bb_period, 'bb_period', minimum=2),
+    )
+    try:
+        sigma_up, sigma_down = float(bb_std_up), float(bb_std_down)
+    except (TypeError, ValueError) as exc:
+        raise KBarSchemaError(f'Bollinger sigma 必須是數值: {exc}') from exc
+    if (not np.isfinite(sigma_up) or sigma_up <= 0 or
+            not np.isfinite(sigma_down) or sigma_down <= 0):
+        raise KBarSchemaError('Bollinger 上下 sigma 必須是 finite 正數')
+    ma_type = str(bb_ma_type).strip().upper()
+    if ma_type not in ('SMA', 'EMA', 'WMA'):
+        raise KBarSchemaError('bb_ma_type 只接受 SMA、EMA 或 WMA')
+    payload = dict(module.indicator_core(
+        batch.close, *periods, sigma_up, sigma_down, ma_type))
+    names = (
+        'sma', 'ema', 'wma', 'rsi', 'macd', 'signal', 'hist',
+        'bb_mid', 'bb_std', 'bb_upper', 'bb_lower', 'bb_width',
+    )
+    try:
+        columns = [payload[name] for name in names]
+        rows = int(payload['rows'])
+    except KeyError as exc:
+        raise KBarSchemaError(f'native indicator 結果缺少欄位: {exc}') from exc
+    for name, column in zip(names, columns):
+        if (not isinstance(column, np.ndarray) or column.ndim != 1 or
+                column.dtype != np.dtype(np.float64) or not column.flags.c_contiguous):
+            raise KBarSchemaError(f'native indicator {name} 不符合 float64 contiguous ABI')
+        if column.size != rows or column.size != batch.rows:
+            raise KBarSchemaError(f'native indicator {name} 列數不一致')
+        column.setflags(write=False)
+    return IndicatorBatch(*columns)

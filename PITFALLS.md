@@ -1508,3 +1508,16 @@
   C++ ISO-8601 parser 也固定輸出 UTC int64 nanoseconds。differential fixture 必須包含
   秒級 SQLite 字串與 9 位小數秒，不能只測原本就是 `datetime64[ns]` 的 DataFrame。
 - **出處**：ADR-146 百萬根 SQLite differential。
+
+### P-129　長歷史 rolling recurrence 會把極小浮點誤差累積成 differential 失敗
+
+- **症狀**：短資料的 WMA／Bollinger 測試全綠，放大到 100 萬根後卻與 pandas
+  出現約 `1e-8` 等級漂移；若直接放寬所有欄位 tolerance，會一起掩蓋 warm-up、
+  seed 或公式真的寫錯。
+- **根因**：用「加入新值、移除舊值」維護 weighted sum 或 variance 時，每次減法
+  都留下 rounding error，長序列會持續累積；不同實作的浮點歸約順序也不可能要求
+  bitwise 相等。
+- **正確做法**：先用百萬筆 benchmark 暴露累積誤差；WMA 與 sample STD 採逐視窗
+  重算，STD 使用 Welford 保持數值穩定。NaN mask 必須完全一致，再按欄位明定很窄的
+  `rtol/atol`，不可用一個寬鬆全域 tolerance 假裝語意等價。
+- **出處**：ADR-147 百萬根 resampler／indicator differential。

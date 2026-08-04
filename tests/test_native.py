@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""ADR-145/146 C++/pybind11/SQLite 原生邊界整合測試。"""
+"""ADR-145～147 C++/pybind11/SQLite/計算核心整合測試。"""
 import importlib.util
 import os
 import sqlite3
@@ -15,12 +15,12 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 SANITIZERS = '--sanitizers' in sys.argv
 
-from core import native_bridge
+from core import futures_session, native_bridge
 from data import kbars_store
 from native import build_native
 
 
-class TestNativeFoundationADR145ADR146(unittest.TestCase):
+class TestNativeFoundationADR145ToADR147(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         build_name = 'build-test-asan' if SANITIZERS else 'build-test'
@@ -56,6 +56,26 @@ class TestNativeFoundationADR145ADR146(unittest.TestCase):
         kbars_store.upsert(db, '2330', 'stock', '1分K', frame)
         return frame
 
+    def _ohlcv(self, index):
+        rows = len(index)
+        base = np.arange(rows, dtype=np.float64) + 100.0
+        return pd.DataFrame({
+            'Open': base,
+            'High': base + 2.0,
+            'Low': base - 1.0,
+            'Close': base + 0.5,
+            'Volume': np.arange(rows, dtype=np.float64) + 10.0,
+        }, index=index)
+
+    def _assert_batch_matches_frame(self, batch, frame, tolerance=0.0):
+        expected_timestamps = pd.DatetimeIndex(frame.index).as_unit('ns').asi8
+        np.testing.assert_array_equal(batch.timestamps, expected_timestamps)
+        for actual, name in zip(
+                batch.as_args()[1:6], ('Open', 'High', 'Low', 'Close', 'Volume')):
+            np.testing.assert_allclose(
+                actual, frame[name].to_numpy(np.float64), rtol=tolerance,
+                atol=tolerance, equal_nan=True)
+
     def test_build_uses_official_windows_abi_toolchain(self):
         if os.name == 'nt':
             self.assertIn('MSVC', self.build_result['compiler'])
@@ -68,6 +88,7 @@ class TestNativeFoundationADR145ADR146(unittest.TestCase):
 
     def test_abi_layout_matches_python_contract(self):
         info = native_bridge.validate_abi_info(dict(self.native.abi_info()))
+        self.assertEqual(info['native_version'], '0.3.0')
         self.assertEqual(info['struct_size'], 56)
         self.assertEqual(info['offsets']['flags'], 48)
         self.native.handshake(native_bridge.ABI_VERSION, native_bridge.KBAR_SCHEMA_VERSION)
@@ -317,6 +338,215 @@ class TestNativeFoundationADR145ADR146(unittest.TestCase):
             mutated[2] += 0.01
             with self.assertRaises(AssertionError):
                 np.testing.assert_array_equal(mutated, expected['Close'].to_numpy(np.float64))
+
+    def test_fixed_resampler_matches_pandas_and_aggregates_flags(self):
+        index = pd.date_range('2026-08-03 09:01', periods=12, freq='min')
+        frame = self._ohlcv(index)
+        flags = np.arange(1, len(frame) + 1, dtype=np.uint32)
+        source = native_bridge.prepare_kbars(frame, flags=flags)
+        result = native_bridge.resample_kbars(
+            self.native, source, 'fixed', interval_minutes=5)
+        expected = frame.resample('5min', label='left', closed='left').agg({
+            'Open': 'first', 'High': 'max', 'Low': 'min',
+            'Close': 'last', 'Volume': 'sum',
+        }).dropna()
+        self._assert_batch_matches_frame(result, expected)
+        expected_flags = []
+        flag_series = pd.Series(flags, index=index)
+        for _, values in flag_series.resample('5min', label='left', closed='left'):
+            if len(values):
+                expected_flags.append(np.bitwise_or.reduce(values.to_numpy(np.uint32)))
+        np.testing.assert_array_equal(result.flags, expected_flags)
+        self.assertTrue(all(not column.flags.writeable for column in result.as_args()))
+        self.assertTrue(all(not column.flags.owndata for column in result.as_args()))
+        owner = result.timestamps.base
+        self.assertTrue(all(column.base is owner for column in result.as_args()))
+
+    def test_calendar_resampler_matches_pandas_with_explicit_timezone(self):
+        local_index = pd.to_datetime([
+            '2026-07-31 09:00+08:00', '2026-07-31 13:30+08:00',
+            '2026-08-03 09:00+08:00', '2026-08-03 13:30+08:00',
+            '2026-08-10 09:00+08:00', '2026-08-10 13:30+08:00',
+        ], format='mixed')
+        frame = self._ohlcv(local_index)
+        source = native_bridge.prepare_kbars(frame)
+        rules = {'day': 'D', 'week': 'W-MON', 'month': 'MS'}
+        for mode, rule in rules.items():
+            with self.subTest(mode=mode):
+                result = native_bridge.resample_kbars(
+                    self.native, source, mode, timezone_offset_minutes=480)
+                expected = frame.resample(rule, label='left', closed='left').agg({
+                    'Open': 'first', 'High': 'max', 'Low': 'min',
+                    'Close': 'last', 'Volume': 'sum',
+                }).dropna()
+                self._assert_batch_matches_frame(result, expected)
+
+    def test_future_session_resampler_matches_all_and_day_python_contracts(self):
+        session_dates = pd.to_datetime([
+            '2026-07-31', '2026-08-03', '2026-08-04', '2026-08-10'])
+        timestamps = []
+        for session_date in session_dates:
+            timestamps.extend([
+                session_date - pd.Timedelta(days=1) + pd.Timedelta(hours=15),
+                session_date + pd.Timedelta(hours=4, minutes=59),
+                session_date + pd.Timedelta(hours=8, minutes=45),
+                session_date + pd.Timedelta(hours=13, minutes=45),
+            ])
+        index = pd.DatetimeIndex(sorted(timestamps))
+        frame = self._ohlcv(index)
+        source = native_bridge.prepare_kbars(frame)
+        agg = {'Open': 'first', 'High': 'max', 'Low': 'min',
+               'Close': 'last', 'Volume': 'sum'}
+        modes = {'future_day': '日K', 'future_week': '周K', 'future_month': '月K'}
+        for basis in ('all', 'day'):
+            for mode, timeframe in modes.items():
+                with self.subTest(basis=basis, mode=mode):
+                    result = native_bridge.resample_kbars(
+                        self.native, source, mode, session_basis=basis)
+                    expected = futures_session.resample_future_session(
+                        frame, timeframe, agg, session_basis=basis)
+                    self._assert_batch_matches_frame(result, expected)
+
+    def test_future_session_1345_boundary_and_1346_shift_match_python(self):
+        index = pd.to_datetime([
+            '2026-08-03 13:45:59', '2026-08-03 13:46:00',
+            '2026-08-03 15:00:00', '2026-08-04 08:45:00',
+            '2026-08-04 13:45:00'])
+        frame = self._ohlcv(index)
+        source = native_bridge.prepare_kbars(frame)
+        result = native_bridge.resample_kbars(self.native, source, 'future_day')
+        expected = futures_session.resample_future_session(
+            frame, '日K', {'Open': 'first', 'High': 'max', 'Low': 'min',
+                           'Close': 'last', 'Volume': 'sum'})
+        self._assert_batch_matches_frame(result, expected)
+        self.assertEqual(result.rows, 2)
+
+    def test_indicator_core_matches_independent_pandas_formulas(self):
+        rows = 240
+        index = pd.date_range('2026-01-01', periods=rows, freq='D')
+        x = np.arange(rows, dtype=np.float64)
+        close = 100.0 + x * 0.07 + np.sin(x / 4.0) * 3.0 + np.cos(x / 11.0)
+        frame = self._ohlcv(index)
+        frame['Close'] = close
+        batch = native_bridge.prepare_kbars(frame)
+        result = native_bridge.calculate_native_indicators(
+            self.native, batch, ma_period=20, rsi_period=14,
+            macd_fast=12, macd_slow=26, macd_signal=9,
+            bb_period=20, bb_std_up=2.25, bb_std_down=1.75, bb_ma_type='SMA')
+
+        series = pd.Series(close, index=index)
+        expected_sma = series.rolling(20).mean()
+        expected_ema = series.ewm(span=20, adjust=False).mean()
+        weights = np.arange(1, 21, dtype=np.float64)
+        expected_wma = series.rolling(20).apply(
+            lambda values: np.dot(values, weights) / weights.sum(), raw=True)
+        delta = series.diff()
+        gain = delta.clip(lower=0).ewm(com=13, adjust=False).mean()
+        loss = (-delta.clip(upper=0)).ewm(com=13, adjust=False).mean()
+        expected_rsi = 100 - 100 / (1 + gain / loss)
+        fast = series.ewm(span=12, adjust=False).mean()
+        slow = series.ewm(span=26, adjust=False).mean()
+        expected_macd = fast - slow
+        expected_signal = expected_macd.ewm(span=9, adjust=False).mean()
+        expected_std = series.rolling(20).std()
+        expected = {
+            'sma': expected_sma,
+            'ema': expected_ema,
+            'wma': expected_wma,
+            'rsi': expected_rsi,
+            'macd': expected_macd,
+            'signal': expected_signal,
+            'hist': expected_macd - expected_signal,
+            'bb_mid': expected_sma,
+            'bb_std': expected_std,
+            'bb_upper': expected_sma + 2.25 * expected_std,
+            'bb_lower': expected_sma - 1.75 * expected_std,
+            'bb_width': ((4.0 * expected_std) / expected_sma) * 100,
+        }
+        for name, actual in result.as_dict().items():
+            np.testing.assert_allclose(
+                actual, expected[name].to_numpy(np.float64),
+                rtol=2e-11, atol=2e-11, equal_nan=True, err_msg=name)
+        self.assertTrue(all(not column.flags.writeable
+                            for column in result.as_dict().values()))
+        owner = result.sma.base
+        self.assertTrue(all(column.base is owner for column in result.as_dict().values()))
+
+    def test_bollinger_mid_supports_ema_and_wma(self):
+        index = pd.date_range('2026-01-01', periods=80, freq='D')
+        frame = self._ohlcv(index)
+        batch = native_bridge.prepare_kbars(frame)
+        series = frame['Close']
+        weights = np.arange(1, 11, dtype=np.float64)
+        expected = {
+            'EMA': series.ewm(span=10, adjust=False).mean(),
+            'WMA': series.rolling(10).apply(
+                lambda values: np.dot(values, weights) / weights.sum(), raw=True),
+        }
+        for kind in ('EMA', 'WMA'):
+            with self.subTest(kind=kind):
+                result = native_bridge.calculate_native_indicators(
+                    self.native, batch, ma_period=10, bb_period=10, bb_ma_type=kind)
+                np.testing.assert_allclose(
+                    result.bb_mid, expected[kind].to_numpy(np.float64),
+                    rtol=1e-12, atol=1e-12, equal_nan=True)
+
+    def test_native_compute_empty_short_and_invalid_inputs(self):
+        empty = self._batch(0)
+        resampled = native_bridge.resample_kbars(
+            self.native, empty, 'fixed', interval_minutes=5)
+        indicators = native_bridge.calculate_native_indicators(self.native, empty)
+        self.assertEqual(resampled.rows, 0)
+        self.assertEqual(indicators.rows, 0)
+
+        short = self._batch(3)
+        short_indicators = native_bridge.calculate_native_indicators(
+            self.native, short, ma_period=5, bb_period=5)
+        self.assertTrue(np.isnan(short_indicators.sma).all())
+        self.assertTrue(np.isnan(short_indicators.wma).all())
+        self.assertTrue(np.isnan(short_indicators.bb_std).all())
+        self.assertFalse(np.isnan(short_indicators.ema).any())
+
+        duplicate = self._batch(3)
+        duplicate.timestamps[1] = duplicate.timestamps[0]
+        with self.assertRaises(ValueError):
+            native_bridge.resample_kbars(
+                self.native, duplicate, 'fixed', interval_minutes=5)
+        descending = self._batch(3)
+        descending.timestamps[2] = descending.timestamps[1] - 1
+        with self.assertRaises(ValueError):
+            native_bridge.resample_kbars(
+                self.native, descending, 'fixed', interval_minutes=5)
+        nonfinite = self._batch(3)
+        nonfinite.close[1] = np.nan
+        with self.assertRaises(ValueError):
+            native_bridge.resample_kbars(
+                self.native, nonfinite, 'fixed', interval_minutes=5)
+        with self.assertRaises(ValueError):
+            native_bridge.calculate_native_indicators(self.native, nonfinite)
+        with self.assertRaises(native_bridge.KBarSchemaError):
+            native_bridge.resample_kbars(self.native, short, 'unknown')
+        with self.assertRaises(native_bridge.KBarSchemaError):
+            native_bridge.resample_kbars(
+                self.native, short, 'future_day', session_basis='invalid')
+        with self.assertRaises(ValueError):
+            self.native.resample_kbars(
+                *empty.as_args(), 'future_day', 0, 0, 'invalid')
+        with self.assertRaises(native_bridge.KBarSchemaError):
+            native_bridge.calculate_native_indicators(
+                self.native, short, ma_period=0)
+
+    def test_indicator_differential_assertion_detects_mutation(self):
+        index = pd.date_range('2026-01-01', periods=50, freq='D')
+        frame = self._ohlcv(index)
+        batch = native_bridge.prepare_kbars(frame)
+        result = native_bridge.calculate_native_indicators(
+            self.native, batch, ma_period=5)
+        expected = frame['Close'].rolling(5).mean().to_numpy(np.float64)
+        mutated = result.sma.copy()
+        mutated[10] += 0.01
+        with self.assertRaises(AssertionError):
+            np.testing.assert_allclose(mutated, expected, equal_nan=True)
 
 
 if __name__ == '__main__':

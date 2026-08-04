@@ -339,11 +339,11 @@ D:\StockBuild-main\
 │   ├─ market_session.py    交易時段/開盤暖機/跨開盤判斷 (ADR-070/121/127)
 │   ├─ kbars_plan.py        kbars 分段門檻/段長的單一出處 (ADR-122)
 │   ├─ migration_baseline.py C++ 移植 golden/benchmark 基準 (ADR-144)
-│   ├─ native_bridge.py     Python/C++ ABI、欄式 KBar 與唯讀 SQLite range 邊界 (ADR-145/146)
+│   ├─ native_bridge.py     ABI、欄式 KBar、SQLite range、resampler／指標 shadow API (ADR-145～147)
 │   └─ order_rules.py
-├─ native/                 CMake/MSVC x64/pybind11 原生核心與 SQLite range buffers (ADR-145/146)
-│   ├─ include/stockbuild/  版本、KBar schema、SQLite reader 介面
-│   ├─ src/                 pybind11 module 與 SQLite RAII 實作
+├─ native/                 CMake/MSVC x64/pybind11 原生核心 (ADR-145～147)
+│   ├─ include/stockbuild/  版本、KBar schema、SQLite、resampler、indicator 介面
+│   ├─ src/                 SQLite RAII、resampler 與 indicator 實作
 │   ├─ tests/               C++ schema smoke test
 │   └─ build_native.py      可重現的 configure/build/CTest 工具
 ├─ data/
@@ -357,7 +357,7 @@ D:\StockBuild-main\
 ├─ tests/
 │   ├─ test_core.py        core/ + data/ 離線單元測試
 │   ├─ test_brokers.py     brokers/ 離線測試 (照 SDK 原始碼複刻的假模組,ADR-111)
-│   └─ test_native.py      native ABI／載入／百萬根／SQLite range／RAII 回歸測試
+│   └─ test_native.py      ABI／SQLite／resampler／indicator／ASan 原生回歸測試
 ├─ diag_mock_tkinter.py    假 tkinter/mplfinance 環境 (開發用)
 ├─ diag_repro_issues.py    問題重現/驗證腳本 (開發用)
 ├─ broker_config.json      券商設定

@@ -1,8 +1,9 @@
 # StockBuild native foundation
 
-這個目錄是 ADR-145/146 的 Windows 原生核心。提供 KBar ABI／批次邊界、SQLite
-唯讀 RAII reader、prepared range query 與 C++ 欄式 KBar buffers；尚未接管正式
-回測、策略、選股、GUI 或送單。
+這個目錄是 ADR-145～147 的 Windows 原生核心。提供 KBar ABI／批次邊界、SQLite
+唯讀 RAII reader、prepared range query、C++ 欄式 KBar buffers、OHLCV resampler，
+以及第一批 SMA／EMA／WMA／RSI／MACD／Bollinger 指標核心；尚未接管正式回測、
+策略、選股、GUI 或送單。
 
 ## 建置與測試
 
@@ -17,12 +18,14 @@ python tests/test_native.py
 `build_native.py` 會尋找 Visual Studio Build Tools 的 `VsDevCmd.bat`，以 MSVC x64、
 CMake 與 Ninja 建置，再執行 CTest。`tests/test_native.py` 每次使用乾淨的
 `native/build-test`，並測試 Python import、ABI、100 萬根 zero-copy、SQLite range
-differential／索引／snapshot 與 Windows 解鎖。
+differential／索引／snapshot／Windows 解鎖、時間分組語意、指標 differential、
+唯讀輸出與 owner lifetime。
 
 百萬根 SQLite → C++ buffer 的同機比較可執行：
 
 ```powershell
 python benchmarks/adr146_sqlite_range.py --rows 1000000
+python benchmarks/adr147_resampler_indicators.py --rows 1000000
 ```
 
 可用 `python native/build_native.py --sanitizers` 啟用 sanitizer 設定；MSVC 主機還必須
