@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""ADR-145～148：Python 與 StockBuild C++ core 的版本／欄式資料邊界。
+"""ADR-145～152：Python 與 StockBuild C++ core 的版本／欄式資料邊界。
 
 本檔只驗證 ABI、dtype、stride、SQLite range 與轉送批次資料，不包含策略、
 成交或風控規則。
@@ -104,6 +104,19 @@ class IndicatorBatch:
 
 @dataclass(frozen=True)
 class MultiMovingAverageBatch:
+    values: tuple[np.ndarray, ...]
+
+    @property
+    def rows(self):
+        return int(self.values[0].size) if self.values else 0
+
+    @property
+    def count(self):
+        return len(self.values)
+
+
+@dataclass(frozen=True)
+class ConditionBatch:
     values: tuple[np.ndarray, ...]
 
     @property
@@ -534,6 +547,85 @@ def calculate_native_moving_averages(module, batch, periods, kinds):
             raise KBarSchemaError(f'native multi MA 第 {index + 1} 欄列數不一致')
         column.setflags(write=False)
     return MultiMovingAverageBatch(values)
+
+
+_NATIVE_CONDITION_SPECS = {
+    'ma_cross_up': (('fast', 5), ('slow', 20)),
+    'ma_cross_down': (('fast', 5), ('slow', 20)),
+    'price_break_high': (('n', 20),), 'price_break_low': (('n', 20),),
+    'price_above': (('value', 0),), 'price_below': (('value', 0),),
+    'price_cross_up_ma': (('n', 20),), 'price_cross_down_ma': (('n', 20),),
+    'price_above_ma': (('n', 20),), 'price_below_ma': (('n', 20),),
+    'ma_slope_up': (('n', 20), ('look', 3)),
+    'ma_slope_down': (('n', 20), ('look', 3)),
+    'ma_align_bull': (('short', 5), ('mid', 20), ('long', 60)),
+    'ma_align_bear': (('short', 5), ('mid', 20), ('long', 60)),
+    'volume_above_ma': (('n', 20), ('mult', 1.5)),
+    'volume_below_ma': (('n', 20), ('mult', 0.7)),
+    'consecutive_up': (('n', 3),), 'consecutive_down': (('n', 3),),
+    'pct_change_above': (('value', 3.0),),
+    'pct_change_below': (('value', -3.0),),
+    'always_true': (), 'inside_bar': (),
+    'gap_up': (('value', 0.0),), 'gap_down': (('value', 0.0),),
+}
+_NATIVE_MA_CONDITIONS = frozenset({
+    'price_cross_up_ma', 'price_cross_down_ma', 'price_above_ma', 'price_below_ma',
+    'ma_slope_up', 'ma_slope_down', 'ma_align_bull', 'ma_align_bear',
+})
+
+
+def calculate_native_conditions(module, batch, conditions):
+    """【ADR-152】將第一批策略條件編譯成 typed batch，回傳逐根 readonly bool bytes。"""
+    validate_abi_info(dict(module.abi_info()))
+    validate_batch(batch)
+    requests = list(conditions or ())
+    if not requests or len(requests) > 64:
+        raise KBarSchemaError('native condition 請求數量必須介於 1 與 64')
+    types, params, kinds = [], [], []
+    for index, condition in enumerate(requests):
+        if not isinstance(condition, dict):
+            raise KBarSchemaError(f'native condition 第 {index + 1} 項必須是 dict')
+        condition_type = str(condition.get('type', '')).strip()
+        spec = _NATIVE_CONDITION_SPECS.get(condition_type)
+        if spec is None:
+            raise KBarSchemaError(f'尚未支援的 native condition：{condition_type or "(空)"}')
+        raw_params = condition.get('params') or {}
+        if not isinstance(raw_params, dict):
+            raise KBarSchemaError(f'native condition {condition_type} params 必須是 dict')
+        parsed = []
+        for key, default in spec:
+            try:
+                value = float(raw_params.get(key, default))
+            except (TypeError, ValueError) as exc:
+                raise KBarSchemaError(
+                    f'native condition {condition_type}.{key} 必須是數值：{exc}') from exc
+            if not np.isfinite(value):
+                raise KBarSchemaError(f'native condition {condition_type}.{key} 必須是有限數值')
+            parsed.append(value)
+        kind = str(raw_params.get('kind', 'SMA')).strip().upper()
+        if condition_type in _NATIVE_MA_CONDITIONS and kind not in ('SMA', 'EMA'):
+            raise KBarSchemaError(f'native condition {condition_type} 均線只接受 SMA 或 EMA')
+        types.append(condition_type)
+        params.append(parsed)
+        kinds.append(kind)
+    payload = dict(module.condition_core(
+        batch.open, batch.high, batch.low, batch.close, batch.volume,
+        types, params, kinds))
+    try:
+        values = tuple(payload['values'])
+        rows, count = int(payload['rows']), int(payload['count'])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise KBarSchemaError(f'native condition 回傳缺少欄位：{exc}') from exc
+    if count != len(requests) or len(values) != count:
+        raise KBarSchemaError('native condition 回傳欄數不一致')
+    for index, column in enumerate(values):
+        if (not isinstance(column, np.ndarray) or column.ndim != 1 or
+                column.dtype != np.dtype(np.uint8) or not column.flags.c_contiguous):
+            raise KBarSchemaError(f'native condition 第 {index + 1} 欄不是 uint8 contiguous ABI')
+        if column.size != rows or column.size != batch.rows:
+            raise KBarSchemaError(f'native condition 第 {index + 1} 欄列數不一致')
+        column.setflags(write=False)
+    return ConditionBatch(values)
 
 
 def calculate_native_advanced_indicators(

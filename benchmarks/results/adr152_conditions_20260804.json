@@ -1,0 +1,37 @@
+{
+  "conditions": 24,
+  "environment": {
+    "cpu_count": 12,
+    "machine": "AMD64",
+    "packages": {
+      "numpy": "2.4.6",
+      "pandas": "3.0.3"
+    },
+    "platform": "Windows-10-10.0.19045-SP0",
+    "processor": "Intel64 Family 6 Model 165 Stepping 5, GenuineIntel",
+    "python": "3.14.5",
+    "python_executable": "python.exe",
+    "python_implementation": "CPython",
+    "release": "10",
+    "system": "Windows"
+  },
+  "parity": {
+    "native_ms": 1.3169,
+    "python_current_ms": 2938.2765,
+    "rows": 600,
+    "signal_hash": "9401a11eada5ee030afde7489e9ba322658f8f1707bc19b57f9d6ca362f25ef6",
+    "speedup_vs_python_current": 2231.20699917,
+    "status": "passed"
+  },
+  "performance": {
+    "bar_conditions_per_second": 60346843.47714155,
+    "native_ms": 39.7701,
+    "rows": 100000,
+    "signal_hash": "dfb8c071ffa28a93672902c35729fca1ec3762994be4e5e1673adcf50ab433ff"
+  },
+  "report_schema_version": 1,
+  "runtime": {
+    "native_version": "0.6.0",
+    "python_cache_tag": "cpython-314"
+  }
+}

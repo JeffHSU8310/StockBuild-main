@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "stockbuild/advanced_indicators.hpp"
+#include "stockbuild/conditions.hpp"
 #include "stockbuild/kbar_schema.hpp"
 #include "stockbuild/indicators.hpp"
 #include "stockbuild/resampler.hpp"
@@ -359,6 +360,59 @@ py::dict multi_ma_core_native(const py::array& close,
     return result;
 }
 
+py::dict condition_core_native(const py::array& open,
+                               const py::array& high,
+                               const py::array& low,
+                               const py::array& close,
+                               const py::array& volume,
+                               const std::vector<std::string>& types,
+                               const std::vector<std::vector<double>>& params,
+                               const std::vector<std::string>& ma_kinds) {
+    const py::buffer_info open_info = require_column<double>(open, "open");
+    const py::buffer_info high_info = require_column<double>(high, "high");
+    const py::buffer_info low_info = require_column<double>(low, "low");
+    const py::buffer_info close_info = require_column<double>(close, "close");
+    const py::buffer_info volume_info = require_column<double>(volume, "volume");
+    const py::ssize_t rows = close_info.shape[0];
+    if (open_info.shape[0] != rows || high_info.shape[0] != rows ||
+        low_info.shape[0] != rows || volume_info.shape[0] != rows) {
+        throw std::invalid_argument("condition OHLCV 列數不一致");
+    }
+    if (types.size() != params.size() || types.size() != ma_kinds.size()) {
+        throw std::invalid_argument("condition types/params/ma_kinds 數量不一致");
+    }
+    std::vector<stockbuild::ConditionRequest> requests;
+    requests.reserve(types.size());
+    for (std::size_t i = 0; i < types.size(); ++i) {
+        requests.push_back({types[i], params[i], ma_kinds[i]});
+    }
+    std::unique_ptr<stockbuild::ConditionColumns> columns;
+    {
+        py::gil_scoped_release release;
+        columns = std::make_unique<stockbuild::ConditionColumns>(
+            stockbuild::calculate_conditions(
+                {static_cast<const double*>(open_info.ptr), static_cast<std::size_t>(rows)},
+                {static_cast<const double*>(high_info.ptr), static_cast<std::size_t>(rows)},
+                {static_cast<const double*>(low_info.ptr), static_cast<std::size_t>(rows)},
+                {static_cast<const double*>(close_info.ptr), static_cast<std::size_t>(rows)},
+                {static_cast<const double*>(volume_info.ptr), static_cast<std::size_t>(rows)},
+                requests));
+    }
+    stockbuild::ConditionColumns* raw = columns.release();
+    py::capsule owner(raw, [](void* pointer) {
+        delete static_cast<stockbuild::ConditionColumns*>(pointer);
+    });
+    py::list values;
+    for (std::vector<std::uint8_t>& column : raw->values) {
+        values.append(vector_view(column, owner));
+    }
+    py::dict result;
+    result["rows"] = raw->rows;
+    result["count"] = raw->values.size();
+    result["values"] = values;
+    return result;
+}
+
 py::dict advanced_indicator_core_native(const py::array& high,
                                         const py::array& low,
                                         const py::array& close,
@@ -414,7 +468,7 @@ py::dict advanced_indicator_core_native(const py::array& high,
 }  // namespace
 
 PYBIND11_MODULE(_stockbuild_native, module) {
-    module.doc() = "StockBuild ADR-151 native KBar data and indicator core";
+    module.doc() = "StockBuild ADR-152 native KBar, indicator and condition core";
     module.def("abi_info", &abi_info);
     module.def("handshake", &handshake, py::arg("expected_abi"), py::arg("expected_schema"));
     module.def("inspect_kbars", &inspect_kbars,
@@ -448,6 +502,10 @@ PYBIND11_MODULE(_stockbuild_native, module) {
                py::arg("bb_std_down") = 2.0, py::arg("bb_ma_type") = "SMA");
     module.def("multi_ma_core", &multi_ma_core_native,
                py::arg("close"), py::arg("periods"), py::arg("kinds"));
+    module.def("condition_core", &condition_core_native,
+               py::arg("open"), py::arg("high"), py::arg("low"),
+               py::arg("close"), py::arg("volume"), py::arg("types"),
+               py::arg("params"), py::arg("ma_kinds"));
     module.def("advanced_indicator_core", &advanced_indicator_core_native,
                py::arg("high"), py::arg("low"), py::arg("close"),
                py::arg("kdj_n") = 9, py::arg("kdj_m1") = 3,
