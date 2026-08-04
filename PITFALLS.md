@@ -1475,3 +1475,22 @@
   metrics／排名／選股逐欄比較。smoke 只供快速回歸，full 尺度不可被縮短取代；
   刻意改壞交易損益和選股名單時測試必須轉紅。
 - **出處**：ADR-144。
+
+### P-126　找到 `cl.exe` 不代表 Windows 原生工具鏈完整
+- **症狀**：CMake 能辨識 MSVC，卻在最小測試連結前因找不到 `rc.exe`、`mt.exe` 或
+  Windows SDK 而失敗；改用 MinGW 雖可編譯 DLL，官方 CPython 卻無法安全載入。
+- **根因**：只檢查 compiler executable，沒有驗證 MSVC x64 developer environment、
+  Windows SDK、CMake、Ninja 與 Python ABI 是同一條受支援工具鏈。
+- **正確做法**：正式 Windows `.pyd` 固定從 `VsDevCmd.bat -arch=x64 -host_arch=x64`
+  啟動，用乾淨 build directory 完成 configure／compile／CTest／import；缺 SDK 就補齊
+  Windows SDK，不以另一套 compiler 混搭。ASan 還要另外確認對應 runtime library 已安裝。
+- **出處**：ADR-145。
+
+### P-127　相同位元寬度不等於相同 NumPy dtype／C++ ABI
+- **症狀**：`uint32` 在某些平台的 buffer format alias 與預期字串不同而被誤拒，或
+  dtype 看似都是 8 bytes，欄位 offset、stride、endianness 不同仍傳進 C++。
+- **根因**：把 PEP 3118 格式字串或 `itemsize` 當成完整型別識別，且只測 happy path。
+- **正確做法**：pybind11 用 dtype identity 核對精確型別，另驗 ndim、contiguous、
+  stride、列數；C++ `static_assert` 鎖定 size／alignment／offset，Python 端用版本握手
+  重驗同一份 layout。錯 dtype、切片 stride、列數與版本都必須有拒絕測試。
+- **出處**：ADR-145。

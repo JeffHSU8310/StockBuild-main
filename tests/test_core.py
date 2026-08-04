@@ -62,6 +62,7 @@ from core import fundamental_parser
 from core import market_screener
 from core import screener_backtest
 from core import migration_baseline
+from core import native_bridge
 from data import config_store
 from data import taifex_store
 from data import chips_store
@@ -129,6 +130,41 @@ class TestMigrationBaselineADR144(unittest.TestCase):
         self.assertEqual(full['backtest_bars'], 100_000)
         self.assertEqual(len(full['optimizer_fast']) * len(full['optimizer_slow']), 500)
         self.assertEqual((full['screener_symbols'], full['screener_bars']), (2_000, 2_600))
+
+
+class TestNativeBridgeADR145(unittest.TestCase):
+    def _df(self):
+        idx = pd.date_range('2026-08-01', periods=3, freq='min')
+        return pd.DataFrame({'Open': [1, 2, 3], 'High': [2, 3, 4],
+                             'Low': [0, 1, 2], 'Close': [1.5, 2.5, 3.5],
+                             'Volume': [10, 20, 30]}, index=idx)
+
+    def test_expected_abi_layout_is_frozen(self):
+        info = native_bridge.expected_abi_info()
+        self.assertEqual(info['abi_version'], 1)
+        self.assertEqual(info['schema_version'], 1)
+        self.assertEqual(info['struct_size'], 56)
+        self.assertEqual(info['offsets']['reserved'], 52)
+
+    def test_prepare_kbars_returns_exact_dtypes_and_contiguous_buffers(self):
+        batch = native_bridge.prepare_kbars(self._df())
+        self.assertEqual(batch.rows, 3)
+        self.assertEqual(batch.timestamps.dtype, np.dtype(np.int64))
+        self.assertEqual(batch.open.dtype, np.dtype(np.float64))
+        self.assertEqual(batch.flags.dtype, np.dtype(np.uint32))
+        self.assertTrue(all(value.flags.c_contiguous for value in batch.as_args()))
+
+    def test_prepare_rejects_missing_column_and_bad_flags(self):
+        with self.assertRaises(native_bridge.KBarSchemaError):
+            native_bridge.prepare_kbars(self._df().drop(columns=['Volume']))
+        with self.assertRaises(native_bridge.KBarSchemaError):
+            native_bridge.prepare_kbars(self._df(), flags=np.zeros(2, dtype=np.uint32))
+
+    def test_bad_native_offset_is_not_silently_accepted(self):
+        broken = native_bridge.expected_abi_info()
+        broken['offsets']['close'] = 24
+        with self.assertRaises(native_bridge.NativeVersionError):
+            native_bridge.validate_abi_info(broken)
 
 
 class TestChartViewport(unittest.TestCase):
