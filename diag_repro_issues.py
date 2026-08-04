@@ -6322,6 +6322,29 @@ run_case("ADR-152: C++批次策略條件 / 逐根訊號 / 無broker依賴",
          _native_condition_core_152)
 
 
+def _native_strategy_runtime_153():
+    """Native runtime stays typed, broker-neutral, and behind a shadow bridge."""
+    import inspect as _inspect
+    from pathlib import Path as _Path
+    from core import native_bridge as _native_bridge
+
+    bridge_source = _inspect.getsource(_native_bridge.evaluate_native_strategy)
+    assert 'strategy_runtime' in bridge_source and 'StrategyIntentBatch' in bridge_source, \
+        "ADR153 bridge must return the typed native intent contract"
+    native_source = (_Path(__file__).resolve().parent / 'native' / 'src' /
+                     'strategy_runtime.cpp').read_text(encoding='utf-8')
+    for required in ('entry_logic', 'exit_logic', 'cooldown_seconds',
+                     'daily_loss_limit', 'blocked_reason'):
+        assert required in native_source, f"ADR153 runtime is missing {required}"
+    for forbidden in ('shioaji', 'kgisuperpy', 'place_order', 'BrokerClient'):
+        assert forbidden not in native_source, \
+            f"native strategy runtime must not depend on broker code: {forbidden}"
+
+
+run_case("ADR-153: C++ strategy state/risk / typed intent / no broker dependency",
+         _native_strategy_runtime_153)
+
+
 print(f"{'案例':60s} 結果")
 print("-" * 76)
 for name, st, msg in results:

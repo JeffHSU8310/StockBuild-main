@@ -22,7 +22,7 @@ from data import kbars_store
 from native import build_native
 
 
-class TestNativeFoundationADR145ToADR152(unittest.TestCase):
+class TestNativeFoundationADR145ToADR153(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         build_name = 'build-test-asan' if SANITIZERS else 'build-test'
@@ -157,11 +157,11 @@ class TestNativeFoundationADR145ToADR152(unittest.TestCase):
             cwd=ROOT, check=True, capture_output=True, text=True)
         info = json.loads(probe.stdout)
         self.assertEqual(Path(info['module_file']), module_path.resolve())
-        self.assertEqual(info['native_version'], '0.6.0')
+        self.assertEqual(info['native_version'], '0.7.0')
 
     def test_abi_layout_matches_python_contract(self):
         info = native_bridge.validate_abi_info(dict(self.native.abi_info()))
-        self.assertEqual(info['native_version'], '0.6.0')
+        self.assertEqual(info['native_version'], '0.7.0')
         self.assertEqual(info['struct_size'], 56)
         self.assertEqual(info['offsets']['flags'], 48)
         self.native.handshake(native_bridge.ABI_VERSION, native_bridge.KBAR_SCHEMA_VERSION)
@@ -692,6 +692,122 @@ class TestNativeFoundationADR145ToADR152(unittest.TestCase):
             self.native, self._batch(5), [{'type': 'always_true'}]).values[0]
         with self.assertRaises(ValueError):
             values[0] = 0
+
+    def test_adr153_strategy_runtime_matches_independent_state_machine(self):
+        rows = 96
+        index = pd.date_range('2026-07-01', periods=rows, freq='h')
+        x = np.arange(rows, dtype=np.float64)
+        close = 100.0 + np.sin(x / 2.5) * 6.0 + np.cos(x / 7.0) * 2.0
+        frame = self._ohlcv(index)
+        frame['Close'] = close
+        batch = native_bridge.prepare_kbars(frame)
+        entry_conditions = [
+            {'type': 'price_above', 'params': {'value': 103.0}},
+            {'type': 'pct_change_below', 'params': {'value': -2.0}},
+        ]
+        exit_conditions = [
+            {'type': 'price_below', 'params': {'value': 99.0}},
+            {'type': 'always_true', 'params': {}},
+        ]
+        config = dict(
+            direction='LONG', quantity=3, entry_logic='OR', exit_logic='AND',
+            stop_loss_abs=4.0, take_profit_abs=5.0,
+            max_trades_per_day=2, daily_loss_limit=20.0,
+            cooldown_seconds=3 * 3600.0)
+        actual = native_bridge.evaluate_native_strategy(
+            self.native, batch, entry_conditions, exit_conditions, **config)
+        entry = native_bridge.calculate_native_conditions(
+            self.native, batch, entry_conditions).values
+        exit_ = native_bridge.calculate_native_conditions(
+            self.native, batch, exit_conditions).values
+
+        expected = {name: np.zeros(rows, dtype=dtype) for name, dtype in (
+            ('kind', np.uint8), ('action', np.int8), ('quantity', np.uint32),
+            ('reason', np.uint8), ('blocked_reason', np.uint8), ('state', np.int8))}
+        expected['price'] = np.full(rows, np.nan, dtype=np.float64)
+        expected['entry_price'] = np.zeros(rows, dtype=np.float64)
+        expected['realized_pnl_today'] = np.zeros(rows, dtype=np.float64)
+        state = 0; entry_price = 0.0; realized = 0.0; trades = 0
+        current_day = batch.timestamps[0] // 86_400_000_000_000
+        last_order = None
+        for i in range(rows):
+            day = batch.timestamps[i] // 86_400_000_000_000
+            if day != current_day:
+                current_day = day; trades = 0; realized = 0.0
+            if state == 0 and (entry[0][i] or entry[1][i]):
+                blocked = 0
+                if trades >= 2: blocked = 7
+                elif realized <= -20.0: blocked = 8
+                elif last_order is not None and batch.timestamps[i] - last_order < 3 * 3600 * 1_000_000_000:
+                    blocked = 9
+                expected['blocked_reason'][i] = blocked
+                if not blocked:
+                    expected['kind'][i] = 1; expected['action'][i] = 1
+                    expected['quantity'][i] = 3; expected['price'][i] = close[i]
+                    expected['reason'][i] = 1; state = 1; entry_price = close[i]
+                    trades += 1; last_order = batch.timestamps[i]
+            elif state:
+                favorable = close[i] - entry_price
+                reason = 0
+                if favorable <= -4.0: reason = 5
+                elif favorable >= 5.0: reason = 6
+                elif exit_[0][i] and exit_[1][i]: reason = 2
+                if reason:
+                    expected['kind'][i] = 2; expected['action'][i] = -1
+                    expected['quantity'][i] = 3; expected['price'][i] = close[i]
+                    expected['reason'][i] = reason; realized += favorable * 3
+                    state = 0; entry_price = 0.0
+            expected['state'][i] = state
+            expected['entry_price'][i] = entry_price
+            expected['realized_pnl_today'][i] = realized
+        for name, wanted in expected.items():
+            got = getattr(actual, name)
+            if wanted.dtype == np.float64:
+                np.testing.assert_allclose(got, wanted, equal_nan=True)
+            else:
+                np.testing.assert_array_equal(got, wanted)
+            self.assertFalse(got.flags.writeable)
+
+    def test_adr153_short_intents_empty_and_validation_guards(self):
+        index = pd.date_range('2026-08-01', periods=8, freq='h')
+        frame = self._ohlcv(index)
+        frame['Close'] = np.array([100., 99., 97., 96., 101., 100., 98., 97.])
+        batch = native_bridge.prepare_kbars(frame)
+        result = native_bridge.evaluate_native_strategy(
+            self.native, batch, [{'type': 'always_true'}], (),
+            direction='SHORT', quantity=2, take_profit_abs=2.0)
+        self.assertEqual(result.action[0], -1)
+        self.assertEqual(result.kind[0], 1)
+        self.assertIn(1, result.action.tolist())
+        self.assertTrue(np.all(result.quantity[result.kind > 0] == 2))
+        risk_frame = self._ohlcv(pd.date_range('2026-08-02', periods=5, freq='h'))
+        risk_frame['Close'] = np.array([100., 90., 90., 90., 90.])
+        risk_batch = native_bridge.prepare_kbars(risk_frame)
+        always = [{'type': 'always_true'}]
+        daily_loss = native_bridge.evaluate_native_strategy(
+            self.native, risk_batch, always, always, quantity=1,
+            stop_loss_abs=5.0, daily_loss_limit=5.0)
+        self.assertEqual(daily_loss.reason[1], 5)
+        self.assertEqual(daily_loss.blocked_reason[2], 8)
+        cooldown = native_bridge.evaluate_native_strategy(
+            self.native, risk_batch, always, always, cooldown_seconds=3 * 3600)
+        self.assertEqual(cooldown.blocked_reason[2], 9)
+        max_trades = native_bridge.evaluate_native_strategy(
+            self.native, risk_batch, always, always, max_trades_per_day=1)
+        self.assertEqual(max_trades.blocked_reason[2], 7)
+        empty = native_bridge.evaluate_native_strategy(
+            self.native, self._batch(0), [{'type': 'always_true'}])
+        self.assertEqual(empty.rows, 0)
+        for config in ({'direction': 'SIDEWAYS'}, {'quantity': 0},
+                       {'entry_logic': 'XOR'}, {'stop_loss_pct': -1},
+                       {'max_trades_per_day': -1}):
+            with self.subTest(config=config), self.assertRaises(native_bridge.KBarSchemaError):
+                native_bridge.evaluate_native_strategy(
+                    self.native, batch, [{'type': 'always_true'}], (), **config)
+        with self.assertRaises(native_bridge.KBarSchemaError):
+            native_bridge.evaluate_native_strategy(self.native, batch, [], ())
+        with self.assertRaises(ValueError):
+            result.kind[0] = 0
 
     def test_native_compute_empty_short_and_invalid_inputs(self):
         empty = self._batch(0)

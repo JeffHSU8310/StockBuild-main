@@ -1397,3 +1397,17 @@ Release native 36 項、MSVC ASan native 36 項、`diag_crossref` 與 73 個 Pyt
   broker-neutral OrderIntent，逐根比對 intent 與拒絕原因。
 - RSI／KD／MACD／BB 與籌碼條件仍待加入同一 typed condition core。
 - 本階段沒有新增 GUI，也沒有執行真實券商登入、報價或下單。
+
+## 追記三十六：ADR-153 C++ 策略狀態與風控 Intent 核心
+
+`_stockbuild_native` 已升至 0.7.0，新增 `strategy_runtime`。它直接消費 ADR-152 的
+typed condition columns，以一次線性掃描完成 entry／exit AND／OR、FLAT／LONG／SHORT、
+百分比與絕對值停損停利、每日交易次數、每日已實現虧損及秒級冷卻。輸出是 readonly
+SoA intent 欄位，action 使用 BUY／SELL 數值碼，完全不載入券商 SDK 或執行委託。
+
+96 根跨日差分案例與獨立 Python 狀態機逐欄一致，另涵蓋 SHORT、空資料、非法設定與
+mutation guard。100,000 根、四條條件加狀態風控端到端耗時 20.5514 ms，約 4.87M
+bars／秒；這是決策核心 benchmark，不包含正式回測的 T+1、成本、滑價與報表。
+下一階段先接回測 shadow A/B，完成逐筆 parity 後才考慮讓標準策略採用 native。
+合併前驗證：`test_core` 820、`test_brokers` 43、Release／MSVC ASan native 各 38、
+`diag_repro_issues` 68、`diag_crossref` 與 74 個 Python 檔案編譯全數通過。

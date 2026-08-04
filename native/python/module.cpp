@@ -16,6 +16,7 @@
 #include "stockbuild/indicators.hpp"
 #include "stockbuild/resampler.hpp"
 #include "stockbuild/sqlite_reader.hpp"
+#include "stockbuild/strategy_runtime.hpp"
 #include "stockbuild/version.hpp"
 
 namespace py = pybind11;
@@ -413,6 +414,76 @@ py::dict condition_core_native(const py::array& open,
     return result;
 }
 
+py::dict strategy_runtime_native(
+        const py::array& timestamps, const py::array& session_days,
+        const py::array& close, const py::list& entry_values,
+        const py::list& exit_values, bool short_direction,
+        std::uint32_t quantity, const std::string& entry_logic,
+        const std::string& exit_logic, double stop_loss_pct,
+        double take_profit_pct, double stop_loss_abs, double take_profit_abs,
+        std::uint32_t max_trades_per_day, double daily_loss_limit,
+        double cooldown_seconds) {
+    const py::buffer_info timestamp_info = require_column<std::int64_t>(timestamps, "timestamps");
+    const py::buffer_info day_info = require_column<std::int64_t>(session_days, "session_days");
+    const py::buffer_info close_info = require_column<double>(close, "close");
+    const std::size_t rows = static_cast<std::size_t>(close_info.shape[0]);
+    if (timestamp_info.shape[0] != close_info.shape[0] || day_info.shape[0] != close_info.shape[0]) {
+        throw std::invalid_argument("strategy timestamps/day/close lengths differ");
+    }
+
+    std::vector<py::array> arrays;
+    arrays.reserve(entry_values.size() + exit_values.size());
+    std::vector<std::span<const std::uint8_t>> entry_columns;
+    std::vector<std::span<const std::uint8_t>> exit_columns;
+    auto append_columns = [&](const py::list& source,
+                              std::vector<std::span<const std::uint8_t>>& target,
+                              const char* name) {
+        target.reserve(source.size());
+        for (const py::handle item : source) {
+            arrays.push_back(py::cast<py::array>(item));
+            const py::buffer_info info = require_column<std::uint8_t>(arrays.back(), name);
+            if (static_cast<std::size_t>(info.shape[0]) != rows) {
+                throw std::invalid_argument(std::string(name) + " length differs");
+            }
+            target.emplace_back(static_cast<const std::uint8_t*>(info.ptr), rows);
+        }
+    };
+    append_columns(entry_values, entry_columns, "entry_condition");
+    append_columns(exit_values, exit_columns, "exit_condition");
+
+    const stockbuild::StrategyRuntimeConfig config{
+        short_direction, quantity, entry_logic, exit_logic,
+        stop_loss_pct, take_profit_pct, stop_loss_abs, take_profit_abs,
+        max_trades_per_day, daily_loss_limit, cooldown_seconds,
+    };
+    std::unique_ptr<stockbuild::StrategyIntentColumns> columns;
+    {
+        py::gil_scoped_release release;
+        columns = std::make_unique<stockbuild::StrategyIntentColumns>(
+            stockbuild::evaluate_strategy_runtime(
+                {static_cast<const std::int64_t*>(timestamp_info.ptr), rows},
+                {static_cast<const std::int64_t*>(day_info.ptr), rows},
+                {static_cast<const double*>(close_info.ptr), rows},
+                entry_columns, exit_columns, config));
+    }
+    stockbuild::StrategyIntentColumns* raw = columns.release();
+    py::capsule owner(raw, [](void* pointer) {
+        delete static_cast<stockbuild::StrategyIntentColumns*>(pointer);
+    });
+    py::dict result;
+    result["rows"] = rows;
+    result["kind"] = vector_view(raw->kind, owner);
+    result["action"] = vector_view(raw->action, owner);
+    result["quantity"] = vector_view(raw->quantity, owner);
+    result["price"] = vector_view(raw->price, owner);
+    result["reason"] = vector_view(raw->reason, owner);
+    result["blocked_reason"] = vector_view(raw->blocked_reason, owner);
+    result["state"] = vector_view(raw->state, owner);
+    result["entry_price"] = vector_view(raw->entry_price, owner);
+    result["realized_pnl_today"] = vector_view(raw->realized_pnl_today, owner);
+    return result;
+}
+
 py::dict advanced_indicator_core_native(const py::array& high,
                                         const py::array& low,
                                         const py::array& close,
@@ -468,7 +539,7 @@ py::dict advanced_indicator_core_native(const py::array& high,
 }  // namespace
 
 PYBIND11_MODULE(_stockbuild_native, module) {
-    module.doc() = "StockBuild ADR-152 native KBar, indicator and condition core";
+    module.doc() = "StockBuild ADR-153 native KBar, indicator and strategy runtime core";
     module.def("abi_info", &abi_info);
     module.def("handshake", &handshake, py::arg("expected_abi"), py::arg("expected_schema"));
     module.def("inspect_kbars", &inspect_kbars,
@@ -506,6 +577,16 @@ PYBIND11_MODULE(_stockbuild_native, module) {
                py::arg("open"), py::arg("high"), py::arg("low"),
                py::arg("close"), py::arg("volume"), py::arg("types"),
                py::arg("params"), py::arg("ma_kinds"));
+    module.def("strategy_runtime", &strategy_runtime_native,
+               py::arg("timestamps"), py::arg("session_days"), py::arg("close"),
+               py::arg("entry_values"), py::arg("exit_values"),
+               py::arg("short_direction") = false, py::arg("quantity") = 1,
+               py::arg("entry_logic") = "AND", py::arg("exit_logic") = "OR",
+               py::arg("stop_loss_pct") = 0.0, py::arg("take_profit_pct") = 0.0,
+               py::arg("stop_loss_abs") = 0.0, py::arg("take_profit_abs") = 0.0,
+               py::arg("max_trades_per_day") = 0,
+               py::arg("daily_loss_limit") = 0.0,
+               py::arg("cooldown_seconds") = 0.0);
     module.def("advanced_indicator_core", &advanced_indicator_core_native,
                py::arg("high"), py::arg("low"), py::arg("close"),
                py::arg("kdj_n") = 9, py::arg("kdj_m1") = 3,
