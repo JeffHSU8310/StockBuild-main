@@ -1,0 +1,6 @@
+# 主程式與離線診斷的共用依賴（Python 3.14）。
+numpy>=2.4,<3
+pandas>=3,<4
+matplotlib>=3.11,<4
+mplfinance>=0.12.10b0
+yfinance>=0.2.65

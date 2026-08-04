@@ -33,6 +33,7 @@ import threading
 import time
 import unittest
 from enum import Enum
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -558,6 +559,21 @@ class TestKGIProxy(KGIProxyTestBase):
         self.assertIn('3.13', msg)
         self.assertIn('設定', msg)
 
+    def test_default_python_resolves_windows_launcher(self):
+        """Windows 官方安裝只有 python.exe，也必須能由 py launcher 找到。"""
+        resolved = r'C:\Users\User\Python313\python.exe'
+
+        def which(name):
+            return r'C:\Windows\py.exe' if name == 'py' else None
+
+        completed = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout=resolved + '\n', stderr='')
+        with mock.patch.object(kgi_proxy.shutil, 'which', side_effect=which), \
+                mock.patch.object(kgi_proxy.subprocess, 'run', return_value=completed), \
+                mock.patch.object(kgi_proxy.os.path, 'isfile', return_value=True), \
+                mock.patch.object(kgi_proxy.os, 'access', return_value=True):
+            self.assertEqual(kgi_proxy.default_python(), resolved)
+
     def test_build_order_refuses_in_proxy_mode(self):
         """委託轉換只能有一份 (在子行程裡),proxy 不可自己再抄一份。"""
         p, _ = self._proxy('ok')
@@ -613,13 +629,8 @@ class TestKGIWorkerEndToEnd(unittest.TestCase):
 
 
 def _find_real_313():
-    """找一個真的 3.13 直譯器;沒有就回空字串 (該測試會 skip)。"""
-    for cand in ('python3.13', 'python3.12', 'python3.11'):
-        for d in (os.environ.get('PATH') or '').split(os.pathsep):
-            p = os.path.join(d, cand)
-            if os.path.isfile(p) and os.access(p, os.X_OK):
-                return p
-    return ''
+    """沿用正式程式的版本偵測，避免測試與產品在 Windows 上走不同規則。"""
+    return kgi_proxy.default_python()
 
 
 class TestKGIProxyRealSubprocess(unittest.TestCase):

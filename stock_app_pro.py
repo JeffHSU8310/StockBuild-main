@@ -5807,6 +5807,8 @@ class StockTradingAppPro(tk.Tk):
                 # 就算是「完整段」,現在也只是 SJ_DAYS 這個有界範圍,不是以前
                 # 上千~上萬根的 yahoo/期交所延伸資料。
                 quick_len = None
+                quick_covers_full = False
+                quick_raw = None
                 want_quick = self.asset_type in ("future", "index_tw", "stock")
                 if (not published_from_cache) and want_quick and tf in self.QUICK_DAYS:
                     try:
@@ -5818,12 +5820,21 @@ class StockTradingAppPro(tk.Tk):
                             df_quick = self._resample_sj_df(quick_raw, tf)
                             if _publish(df_quick, full_ui=True):
                                 quick_len = _pub_state['n']
+                                # ADR-142:建庫後 start_dt 通常只回抓 DB 尾端前 7 天。
+                                # 若快速段已從更早（或同一天）開始，它就是完整增量，
+                                # 不可再用相同起點下載一次浪費 API 配額。
+                                quick_covers_full = q_start.date() <= start_dt.date()
                                 self.safe_after(0, self.log_message, f"⚡ 已搶先出圖 (近 {q_days} 天,可開始看盤/hover),耗時 {time.time()-_t0:.1f} 秒;完整歷史背景補全中...")
                     except Exception as e:
                         if self._looks_like_session_dead(e):
                             self._mark_session_dead()
 
                 # ---- 完整下載 (或 stale 快取的背景刷新) ----
+                if quick_len is not None and quick_covers_full:
+                    self._kbars_cache_put(cache_key, q_start, quick_raw, tf)
+                    self.safe_after(0, self.log_message,
+                                    f"⚡ 近期增量已完整更新 (共 {len(df_quick)} 根),無須重複背景下載。")
+                    return
                 # 【ADR-068】已搶先出圖 (快取或快速段) 而使用者又切到別檔時,這一段
                 # 完整歷史 (最耗時的 6+ 段分段下載) 就不必再打了——直接讓路,把
                 # _kbars_lock 與 API 配額留給新商品,新商品才能「馬上出圖」。
