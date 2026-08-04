@@ -26,8 +26,9 @@
   工作目錄不乾淨、或找到多個可能的 worktree，停止同步並請使用者指定路徑；不可
   用 `clone` 覆蓋既有資料夾，也不可自動覆蓋未提交的本機變更。
 - 合併**前**必須完成：`python tests/test_core.py`、`python tests/test_brokers.py`、
-  `python diag_repro_issues.py`、`python diag_crossref.py`、`py_compile` 全過，且新功能
-  要有突變測試證明斷言不是空殼。
+  `python tests/test_native.py`、`python diag_repro_issues.py`、`python diag_crossref.py`、
+  `py_compile` 全過，且新功能要有突變測試證明斷言不是空殼。native suite 會自行用
+  MSVC x64 乾淨建置、執行 CTest 並驗證 Python import；依賴見 `requirements-native.txt`。
 - 合併**後**必須在 `main` 上重跑一次完整驗證 (曾在這一步抓到偶發紅)。
 - 每一筆都要在 `DECISIONS_ADR113.md` 追記實機驗證狀態，**照實寫明哪些還沒經過
   使用者實機驗證**——自動合併不代表可以假裝驗過。

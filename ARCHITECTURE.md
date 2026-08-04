@@ -298,6 +298,7 @@ _tg_poll_worker (背景 daemon,getUpdates long polling)
 | 改動範圍 | 驗證方式 |
 |---|---|
 | `core/`、`data/` 純邏輯 | `python tests/test_core.py`（必跑）+ 補對應測試 |
+| `native/`、`core/native_bridge.py`、KBar ABI、C++ SQLite reader | `python tests/test_native.py`（必跑；乾淨 MSVC x64 build + CTest + import + 100 萬根 zero-copy + SQLite 解鎖） |
 | 「每次重畫都會跑」的主圖附加判斷（盤勢判斷等） | diag 要**連續 `draw_chart()` 多次**再斷言日誌沒有增加（PITFALLS P-87）|
 | 任何跟交易時段有關的閘門 | `diag_repro_issues.run_case` 已統一把 `is_market_open`/`just_opened` 凍結住；需要別的值就**在案例內自己 patch**，不可依賴真實時鐘（P-94/P-97）|
 | `brokers/` 券商 adapter | `python tests/test_brokers.py`（必跑）；真實連線只能實機 |
@@ -312,7 +313,7 @@ _tg_poll_worker (背景 daemon,getUpdates long polling)
 ## 六、目錄結構
 
 ```
-G:\StockBuild\
+D:\StockBuild-main\
 ├─ stock_app_pro.py        GUI 本體 (主程式)
 ├─ CLAUDE.md               專案憲法 (鐵則 + 開工流程)
 ├─ ARCHITECTURE.md         本文件
@@ -333,7 +334,14 @@ G:\StockBuild\
 │   ├─ api_test.py          永豐 API 測試的純規則:時段/版本/欄位/最近月 (ADR-139)
 │   ├─ market_session.py    交易時段/開盤暖機/跨開盤判斷 (ADR-070/121/127)
 │   ├─ kbars_plan.py        kbars 分段門檻/段長的單一出處 (ADR-122)
+│   ├─ migration_baseline.py C++ 移植 golden/benchmark 基準 (ADR-144)
+│   ├─ native_bridge.py     Python/C++ ABI、欄式 KBar 與唯讀 SQLite 邊界 (ADR-145)
 │   └─ order_rules.py
+├─ native/                 CMake/MSVC x64/pybind11 原生核心骨架 (ADR-145)
+│   ├─ include/stockbuild/  版本、KBar schema、SQLite reader 介面
+│   ├─ src/                 pybind11 module 與 SQLite RAII 實作
+│   ├─ tests/               C++ schema smoke test
+│   └─ build_native.py      可重現的 configure/build/CTest 工具
 ├─ data/
 │   └─ config_store.py     設定 / 自選股 / 版面 I/O
 ├─ brokers/                券商 adapter (零 tkinter,可依賴券商 SDK,ADR-097)
@@ -344,7 +352,8 @@ G:\StockBuild\
 │   └─ kgi_worker.py        凱基子行程本體 (**用 Python 3.13 執行**)
 ├─ tests/
 │   ├─ test_core.py        core/ + data/ 離線單元測試
-│   └─ test_brokers.py     brokers/ 離線測試 (照 SDK 原始碼複刻的假模組,ADR-111)
+│   ├─ test_brokers.py     brokers/ 離線測試 (照 SDK 原始碼複刻的假模組,ADR-111)
+│   └─ test_native.py      native ABI／載入／百萬根／SQLite RAII 回歸測試
 ├─ diag_mock_tkinter.py    假 tkinter/mplfinance 環境 (開發用)
 ├─ diag_repro_issues.py    問題重現/驗證腳本 (開發用)
 ├─ broker_config.json      券商設定

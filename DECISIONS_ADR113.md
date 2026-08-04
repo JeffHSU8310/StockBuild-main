@@ -1190,3 +1190,31 @@ SQLite 三情境 API 計數為 `0／1／1`、range query 命中複合索引；�
 本次合併前已通過 `test_core` 807 項、`test_brokers` 43 項（0 略過）、
 `diag_repro_issues` 63 項、`diag_crossref` 與全專案 `py_compile`；真實券商登入、
 真實下單、Qt 與 full 長歷史實機測試均未執行。
+
+## 追記二十八：ADR-145 Phase 1 原生工具鏈與資料邊界
+
+已完成不影響正式產品路徑的 Phase 1 基礎：以 MSVC x64、CMake、Ninja、pybind11
+建立 `_stockbuild_native`，固定 KBar ABI v1 與 Python 版本握手，並以 contiguous
+NumPy columns 一次跨越 Python/C++ 邊界。C++ SQLite reader 僅採 read-only、
+query-only 短連線，statement／connection 皆由 RAII 收尾；Windows 測試確認 probe
+後可立即刪除 DB，且不存在的路徑不會被建立。
+
+1,000,000 根本機基準中，DataFrame 轉欄式陣列中位數 11.658 ms、C++ scan
+2.482 ms、zero-copy echo 0.005 ms、SQLite 唯讀 probe 2.251 ms；這只驗證資料邊界，
+不代表回測、策略、選股或圖表已完成移植。合併前完整驗證通過：`test_core` 811 項、
+`test_native` 10 項、`test_brokers` 43 項、`diag_repro_issues` 63 項、
+`diag_crossref` 與全專案 `py_compile`。
+
+CMake 已提供 sanitizer 選項；本機 MSVC 可編譯 `/fsanitize=address`，但因缺少相符的
+ASan runtime，連結尚未成功。Visual Studio Installer 加裝元件回傳 5007（主機不符合
+元件需求），故此項明確列為未通過，不以一般測試成功取代。產品 GUI／下載／回測／
+策略／選股／broker 路徑仍全部使用 Python，真實券商登入與送單未執行。
+
+### 待實機驗證
+
+- 在可安裝相符 MSVC AddressSanitizer runtime 的支援主機執行
+  `python native/build_native.py --sanitizers`，再跑 CTest 與 Python import。
+- 下一階段接上 SQLite prepared range query 後，用真實十年 K 線資料核對 coverage、
+  查詢延遲、記憶體峰值與關閉程式後 DB／WAL／SHM 無鎖。
+- 本階段沒有變更正式交易路徑，因此不新增真實下單測試；ADR-139 等既有實機項目
+  仍維持原狀，不能因 native 基礎通過而視為完成。

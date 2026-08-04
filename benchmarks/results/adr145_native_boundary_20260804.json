@@ -1,0 +1,106 @@
+{
+  "abi": {
+    "abi_version": 1,
+    "dtypes": {
+      "close": "float64",
+      "flags": "uint32",
+      "high": "float64",
+      "low": "float64",
+      "open": "float64",
+      "reserved": "uint32",
+      "timestamp_ns": "int64",
+      "volume": "float64"
+    },
+    "native_version": "0.1.0",
+    "offsets": {
+      "close": 32,
+      "flags": 48,
+      "high": 16,
+      "low": 24,
+      "open": 8,
+      "reserved": 52,
+      "timestamp_ns": 0,
+      "volume": 40
+    },
+    "schema_version": 1,
+    "struct_alignment": 8,
+    "struct_size": 56
+  },
+  "compiler": "MSVC x64 (VsDevCmd)",
+  "environment": {
+    "cpu_count": 12,
+    "machine": "AMD64",
+    "packages": {
+      "numpy": "2.4.6",
+      "pandas": "3.0.3"
+    },
+    "platform": "Windows-10-10.0.19045-SP0",
+    "processor": "Intel64 Family 6 Model 165 Stepping 5, GenuineIntel",
+    "python": "3.14.5",
+    "python_executable": "python.exe",
+    "python_implementation": "CPython",
+    "release": "10",
+    "system": "Windows"
+  },
+  "native_module_sha256": "31c38cff33d34a7b6adabe521284163f21f2ddf0aaf9ba38c1dbb3bd4e12a6fd",
+  "report_schema_version": 1,
+  "result": {
+    "all_echo_arrays_share_memory": true,
+    "checksum": 2000102500000.0,
+    "inspected_rows": 1000000,
+    "sqlite_count": 100,
+    "sqlite_query_only": true,
+    "sqlite_readonly": true
+  },
+  "rows": 1000000,
+  "timings": {
+    "cpp_inspect_scan": {
+      "max_ms": 2.8134,
+      "median_ms": 2.4816,
+      "min_ms": 2.3852,
+      "samples_ms": [
+        2.8134,
+        2.5223,
+        2.4816,
+        2.415,
+        2.3852
+      ]
+    },
+    "dataframe_to_columns": {
+      "max_ms": 13.113,
+      "median_ms": 11.6576,
+      "min_ms": 8.2747,
+      "samples_ms": [
+        8.2747,
+        10.9147,
+        11.6576,
+        12.596,
+        13.113
+      ]
+    },
+    "sqlite_readonly_probe": {
+      "max_ms": 2.5029,
+      "median_ms": 2.2511,
+      "min_ms": 1.9064,
+      "samples_ms": [
+        2.2511,
+        2.5029,
+        2.3064,
+        1.9843,
+        1.9064
+      ]
+    },
+    "zero_copy_echo": {
+      "max_ms": 0.0062,
+      "median_ms": 0.0052,
+      "min_ms": 0.0049,
+      "samples_ms": [
+        0.0052,
+        0.0062,
+        0.0052,
+        0.005,
+        0.0049
+      ]
+    }
+  }
+}
