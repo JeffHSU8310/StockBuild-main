@@ -6254,6 +6254,28 @@ run_case("ADR-149: 主圖接入 native 指標 router / 預設off / native尚未�
          _native_indicator_route_149)
 
 
+def _native_runtime_rollout_150():
+    """產品必須有可見設定入口與正式 runtime 安裝路徑，不能依賴 test build。"""
+    import inspect as _inspect
+    from native import build_native as _build_native
+
+    settings_source = _inspect.getsource(stock_app_pro.StockTradingAppPro.open_main_settings)
+    save_source = _inspect.getsource(stock_app_pro.StockTradingAppPro._save_app_settings)
+    assert 'native_indicator_mode_var' in settings_source, \
+        "主圖設定視窗缺少 off/shadow 選擇"
+    assert 'engine_router.probe_native()' in settings_source, \
+        "啟用 shadow 前必須檢查 runtime 與 ABI"
+    assert "app_settings['native_indicators']" in save_source, \
+        "off/shadow 選擇沒有寫回 app_settings"
+    parser_source = _inspect.getsource(_build_native.main)
+    assert "'--install'" in parser_source and "'--install-dir'" in parser_source, \
+        "native build 工具缺少正式安裝命令"
+
+
+run_case("ADR-150: Native runtime正式安裝 / GUI off-shadow入口 / ABI檢查",
+         _native_runtime_rollout_150)
+
+
 print(f"{'案例':60s} 結果")
 print("-" * 76)
 for name, st, msg in results:

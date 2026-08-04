@@ -1544,3 +1544,14 @@
   必須比對長度、NaN mask 與逐欄窄 tolerance，載入／ABI／parity 錯誤讓該次工作
   明確失敗並記錄。`native` 在 ADR 驗收閘門完成前必須由程式拒絕，不只靠文件提醒。
 - **出處**：ADR-149。
+
+### P-132　測試 build 能 import，不代表產品 runtime 已部署
+
+- **症狀**：native suite 全綠，主圖切 shadow 卻顯示找不到 `_stockbuild_native`；或 loader
+  隨意掃到舊 `build-test`，實際使用的 ABI／commit 與宣稱版本不同。Windows 同一行程
+  載過同名 DLL 後還可能沿用第一份 module，讓「複製後原行程重載」產生假驗收。
+- **根因**：沒有正式安裝目錄與 ABI 隔離，把編譯輸出、測試載入、產品發布視為同一件事。
+- **正確做法**：用 `build_native.py --install` 安裝 Release 到
+  `native/runtime/<Python cache tag>`；loader 不掃 cwd／build-test，且每次做 ABI handshake。
+  安裝驗收必須用全新 Python 行程核對 `module_file`。ASan 產物禁止安裝為產品 runtime。
+- **出處**：ADR-150。

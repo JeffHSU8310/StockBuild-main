@@ -13,6 +13,7 @@ from pathlib import Path
 
 NATIVE_DIR = Path(__file__).resolve().parent
 DEFAULT_BUILD_DIR = NATIVE_DIR / 'build'
+DEFAULT_INSTALL_ROOT = NATIVE_DIR / 'runtime'
 
 
 def _version_key(value):
@@ -127,14 +128,51 @@ def build(build_dir=DEFAULT_BUILD_DIR, config='Release', sanitizers=False):
             'asan_runtime': str(runtime) if runtime else None}
 
 
+def install(build_result, install_root=DEFAULT_INSTALL_ROOT):
+    """安裝 Release extension 到穩定、Python ABI 隔離的產品 runtime 目錄。"""
+    if bool(build_result.get('sanitizers')):
+        raise ValueError('ASan extension 只供測試，不可安裝成產品 runtime')
+    source = Path(build_result['module']).resolve()
+    if not source.is_file():
+        raise FileNotFoundError(f'找不到待安裝 native module：{source}')
+    cache_tag = sys.implementation.cache_tag or 'python'
+    destination_dir = Path(install_root).resolve() / cache_tag
+    destination_dir.mkdir(parents=True, exist_ok=True)
+    destination = destination_dir / source.name
+    shutil.copy2(source, destination)
+    manifest = {
+        'schema_version': 1,
+        'module': destination.name,
+        'python_cache_tag': cache_tag,
+        'python_version': '.'.join(str(part) for part in sys.version_info[:3]),
+        'platform': sys.platform,
+        'config': str(build_result.get('config', 'Release')),
+        'compiler': str(build_result.get('compiler', 'unknown')),
+    }
+    manifest_path = destination_dir / 'manifest.json'
+    manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+    installed = dict(build_result)
+    installed.update({'installed_module': str(destination),
+                      'manifest': str(manifest_path),
+                      'python_cache_tag': cache_tag})
+    return installed
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description='Build StockBuild native core')
     parser.add_argument('--build-dir', default=str(DEFAULT_BUILD_DIR))
     parser.add_argument('--config', default='Release', choices=('Debug', 'Release'))
     parser.add_argument('--sanitizers', action='store_true')
+    parser.add_argument('--install', action='store_true',
+                        help='build 後安裝到產品 native/runtime/<Python ABI>')
+    parser.add_argument('--install-dir', default=str(DEFAULT_INSTALL_ROOT),
+                        help='--install 的根目錄（預設 native/runtime）')
     args = parser.parse_args(argv)
-    print(json.dumps(build(args.build_dir, args.config, args.sanitizers),
-                     ensure_ascii=False, indent=2))
+    result = build(args.build_dir, args.config, args.sanitizers)
+    if args.install:
+        result = install(result, args.install_dir)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
 
 

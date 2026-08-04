@@ -7,6 +7,9 @@
 from __future__ import annotations
 
 import importlib
+import importlib.machinery
+import importlib.util
+import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -151,11 +154,79 @@ def validate_abi_info(info):
     return info
 
 
-def load_native(module_name='_stockbuild_native'):
+def native_runtime_dirs():
+    """回傳受控的產品 extension 搜尋目錄，不掃描任意 build／cwd。"""
+    cache_tag = sys.implementation.cache_tag or 'python'
+    project_root = Path(__file__).resolve().parents[1]
+    candidates = []
+    configured = os.environ.get('STOCKBUILD_NATIVE_DIR', '').strip()
+    if configured:
+        candidates.append(Path(configured).expanduser())
+    candidates.append(project_root / 'native' / 'runtime' / cache_tag)
+    if getattr(sys, 'frozen', False):
+        candidates.append(Path(sys.executable).resolve().parent / 'native' / cache_tag)
+    unique = []
+    seen = set()
+    for candidate in candidates:
+        resolved = candidate.resolve()
+        key = os.path.normcase(str(resolved))
+        if key not in seen:
+            seen.add(key)
+            unique.append(resolved)
+    return tuple(unique)
+
+
+def _extension_candidates(module_name, search_dirs):
+    for directory in search_dirs:
+        root = Path(directory).expanduser().resolve()
+        for suffix in importlib.machinery.EXTENSION_SUFFIXES:
+            candidate = root / f'{module_name}{suffix}'
+            if candidate.is_file():
+                yield candidate
+
+
+def _load_extension_path(module_name, path):
+    spec = importlib.util.spec_from_file_location(module_name, path)
+    if spec is None or spec.loader is None:
+        raise NativeUnavailable(f'無法建立 native module spec: {path}')
+    module = importlib.util.module_from_spec(spec)
+    previous = sys.modules.get(module_name)
+    sys.modules[module_name] = module
+    try:
+        if os.name == 'nt' and hasattr(os, 'add_dll_directory'):
+            with os.add_dll_directory(str(Path(path).parent)):
+                spec.loader.exec_module(module)
+        else:
+            spec.loader.exec_module(module)
+    except Exception:
+        if previous is None:
+            sys.modules.pop(module_name, None)
+        else:
+            sys.modules[module_name] = previous
+        raise
+    return module
+
+
+def load_native(module_name='_stockbuild_native', search_dirs=None):
+    import_error = None
     try:
         module = importlib.import_module(module_name)
     except (ImportError, OSError) as exc:
-        raise NativeUnavailable(f'無法載入 {module_name}: {exc}') from exc
+        import_error = exc
+        directories = tuple(search_dirs) if search_dirs is not None else native_runtime_dirs()
+        module = None
+        load_errors = []
+        for candidate in _extension_candidates(module_name, directories):
+            try:
+                module = _load_extension_path(module_name, candidate)
+                break
+            except Exception as load_exc:
+                load_errors.append(f'{candidate}: {load_exc}')
+        if module is None:
+            searched = ', '.join(str(Path(item).resolve()) for item in directories) or '(無)'
+            detail = f'；候選載入錯誤：{" | ".join(load_errors)}' if load_errors else ''
+            raise NativeUnavailable(
+                f'無法載入 {module_name}: {import_error}；已搜尋：{searched}{detail}') from exc
     try:
         info = validate_abi_info(dict(module.abi_info()))
         module.handshake(ABI_VERSION, KBAR_SCHEMA_VERSION)
@@ -163,6 +234,8 @@ def load_native(module_name='_stockbuild_native'):
         raise
     except Exception as exc:
         raise NativeVersionError(f'native 版本握手失敗: {exc}') from exc
+    info = dict(info)
+    info['module_file'] = str(Path(module.__file__).resolve())
     return module, info
 
 

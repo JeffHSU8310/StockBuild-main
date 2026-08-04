@@ -1318,3 +1318,30 @@ Release native 31 項、MSVC ASan native 31 項、`diag_crossref` 與 70 個 Pyt
 - 目前尚未開放 `native` 正式輸出；回測、策略與選股也仍走 Python，必須等各自的
   C++ event／condition／screener core 完成 golden differential 後逐項接線。
 - 真實券商登入、報價與下單未執行；本階段只接主圖指標計算，不改送單安全邊界。
+
+## 追記三十三：ADR-150 Native runtime 安裝與 GUI shadow 控制
+
+已建立 source checkout 的正式 native 安裝流程：`python native/build_native.py --install`
+會完成 Release 建置／CTest，並依 `sys.implementation.cache_tag` 安裝到
+`native/runtime/<Python ABI>`、產生 manifest。產品 loader 僅搜尋正常 import、明確
+`STOCKBUILD_NATIVE_DIR`、專案／frozen app 的受控 ABI runtime，不掃描 cwd 或
+`build-test`；載入後仍強制 ABI/schema handshake。ASan module 明確禁止安裝成產品
+runtime，安裝驗收使用全新 Python 行程，避免 Windows 同名 DLL cache 冒充新路徑。
+
+主圖指標設定視窗已新增 off／shadow 下拉與「檢查 Native」；保存 shadow 前必須
+通過產品 runtime 載入與 ABI probe，失敗會留在原設定並顯示安裝指引。實際本機
+SQLite 產品 router shadow：0050 日 K 5,215 根與 TXFR1 日 K 2,438 根，各比對
+25 欄，最大誤差皆為 0，native 時間分別為 5.1481 ms 與 3.7128 ms。匿名報告記於
+`benchmarks/results/adr150_product_shadow_20260804.json`。
+
+合併前驗證：`test_core` 820 項、`test_brokers` 43 項、`diag_repro_issues` 65 項、
+Release native 32 項、MSVC ASan native 32 項、`diag_crossref` 與 71 個 Python
+檔案 `py_compile` 全數通過。
+
+### 待使用者實機驗證
+
+- 開啟「主圖指標參數設定」，按「檢查 Native」，切 shadow 並保存；重啟後確認
+  shadow 還原，切換各指標／參數與縮放重畫時畫面、日誌、延遲正常。
+- 本機長歷史仍只有日 K；大量期貨日夜盤分 K、13:45／15:00 與跨交易日邊界待驗。
+- `native` 正式輸出仍未開放；多組自訂 MA、回測、策略、選股仍走 Python。
+- 真實券商登入、報價與下單未執行，本階段不改任何送單安全邊界。

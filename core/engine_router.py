@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import lru_cache
+from pathlib import Path
 from time import perf_counter
 from typing import Any, Callable, Mapping
 
@@ -253,13 +254,22 @@ def calculate_native_columns(
     return NativeIndicatorOutput(columns, native_version, elapsed_ms)
 
 
+def probe_native() -> Mapping[str, str]:
+    """驗證產品 runtime 可載入及 ABI 握手，供 GUI 明確啟用 shadow 前檢查。"""
+    module, version = _load_native_module()
+    return {
+        "native_version": version,
+        "module_file": str(Path(module.__file__).resolve()),
+    }
+
+
 @lru_cache(maxsize=1)
 def _load_native_module() -> tuple[Any, str]:
     try:
         module, info = native_bridge.load_native()
     except Exception as exc:
         raise IndicatorRouteError(f"無法載入 _stockbuild_native：{exc}") from exc
-    return module, str(info.get("version", "unknown"))
+    return module, str(info.get("native_version", "unknown"))
 
 
 def _resolve_native_module(module: Any | None) -> tuple[Any, str]:
@@ -270,7 +280,7 @@ def _resolve_native_module(module: Any | None) -> tuple[Any, str]:
         module.handshake(native_bridge.ABI_VERSION, native_bridge.KBAR_SCHEMA_VERSION)
     except Exception as exc:
         raise IndicatorRouteError(f"native ABI 驗證失敗：{exc}") from exc
-    return module, str(info.get("version", "unknown"))
+    return module, str(info.get("native_version", "unknown"))
 
 
 def _prepare_indicator_batch(source: pd.DataFrame) -> native_bridge.KBarBatch:

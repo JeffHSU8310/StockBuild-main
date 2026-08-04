@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
-"""ADR-145～148 C++/pybind11/SQLite/計算核心整合測試。"""
+"""ADR-145～150 C++/pybind11/SQLite/產品 runtime 整合測試。"""
 import importlib.util
+import json
 import os
 import sqlite3
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -20,7 +22,7 @@ from data import kbars_store
 from native import build_native
 
 
-class TestNativeFoundationADR145ToADR148(unittest.TestCase):
+class TestNativeFoundationADR145ToADR150(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         build_name = 'build-test-asan' if SANITIZERS else 'build-test'
@@ -129,6 +131,33 @@ class TestNativeFoundationADR145ToADR148(unittest.TestCase):
             runtime = Path(self.build_result['asan_runtime'])
             self.assertTrue(runtime.exists())
             self.assertTrue((Path(self.build_result['module']).parent / runtime.name).exists())
+
+    def test_adr150_install_and_product_loader_use_abi_scoped_runtime(self):
+        install_root = ROOT / 'native' / ('build-test-runtime-asan' if SANITIZERS
+                                          else 'build-test-runtime')
+        if SANITIZERS:
+            with self.assertRaisesRegex(ValueError, '不可安裝'):
+                build_native.install(self.build_result, install_root)
+            return
+
+        installed = build_native.install(self.build_result, install_root)
+        module_path = Path(installed['installed_module'])
+        manifest_path = Path(installed['manifest'])
+        self.assertEqual(module_path.parent.name, sys.implementation.cache_tag)
+        self.assertTrue(module_path.is_file())
+        manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+        self.assertEqual(manifest['module'], module_path.name)
+        self.assertEqual(manifest['python_cache_tag'], sys.implementation.cache_tag)
+
+        probe = subprocess.run(
+            [sys.executable, '-c',
+             ('import json; from core import native_bridge; '
+              f'm, info = native_bridge.load_native(search_dirs=[{str(module_path.parent)!r}]); '
+              'print(json.dumps(info))')],
+            cwd=ROOT, check=True, capture_output=True, text=True)
+        info = json.loads(probe.stdout)
+        self.assertEqual(Path(info['module_file']), module_path.resolve())
+        self.assertEqual(info['native_version'], '0.4.0')
 
     def test_abi_layout_matches_python_contract(self):
         info = native_bridge.validate_abi_info(dict(self.native.abi_info()))

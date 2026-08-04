@@ -423,6 +423,14 @@ class StockTradingAppPro(tk.Tk):
         self.jae_params = {k: tk.StringVar(value=str(v))
                            for k, v in jae.DEFAULT_PARAMS.items()}
         self.var_bbw = tk.BooleanVar(value=False)
+        # 【ADR-150】主圖 native 路由開關；設定檔壞掉或提前填 native 一律安全回 off。
+        try:
+            _native_mode = engine_router.normalize_indicator_mode(
+                self.app_settings.get('native_indicators', engine_router.MODE_OFF))
+        except engine_router.IndicatorRouteError:
+            _native_mode = engine_router.MODE_OFF
+            self.app_settings['native_indicators'] = _native_mode
+        self.native_indicator_mode_var = tk.StringVar(value=_native_mode)
         # 【ADR-011】var_inst/var_margin (法人/資券) 已移除:
         # 這兩個指標原本的資料來源是 FinMind,FinMind 已停用，故一併移除。
 
@@ -1687,6 +1695,9 @@ class StockTradingAppPro(tk.Tk):
             self.app_settings['auto_reconnect'] = bool(self.auto_reconnect_var.get())
             if getattr(self, 'remember_creds_var', None) is not None:
                 self.app_settings['remember_creds'] = bool(self.remember_creds_var.get())
+            if getattr(self, 'native_indicator_mode_var', None) is not None:
+                self.app_settings['native_indicators'] = engine_router.normalize_indicator_mode(
+                    self.native_indicator_mode_var.get())
             config_store.save_app_settings(self.app_settings_file, self.app_settings)
         except Exception:
             pass
@@ -3077,7 +3088,7 @@ class StockTradingAppPro(tk.Tk):
     def open_main_settings(self):
         # 【ADR-131】視窗放大:布林從 1 行變成「標題 + 欄位名 + 兩組」共 4 行,
         # 沿用 400x350 會把「確認並套用」按鈕擠出視窗外 (等於設定存不了)。
-        dlg = tk.Toplevel(self); dlg.title("主圖指標參數設定"); dlg.configure(bg="#1A2026"); self.center_window(dlg, 660, 700); dlg.transient(self); dlg.grab_set()
+        dlg = tk.Toplevel(self); dlg.title("主圖指標參數設定"); dlg.configure(bg="#1A2026"); self.center_window(dlg, 660, 750); dlg.transient(self); dlg.grab_set()
         tk.Label(dlg, text="開關", bg="#1A2026", fg="white").grid(row=0, column=0, pady=10); tk.Label(dlg, text="類型", bg="#1A2026", fg="white").grid(row=0, column=1); tk.Label(dlg, text="週期", bg="#1A2026", fg="white").grid(row=0, column=2); tk.Label(dlg, text="色彩", bg="#1A2026", fg="white").grid(row=0, column=3)
         for i in range(6):
             tk.Checkbutton(dlg, text=f"MA{i+1}", variable=self.ma_shows[i], bg="#1A2026", fg="white", selectcolor="#2A323D").grid(row=i+1, column=0, sticky="w", padx=15, pady=2)
@@ -3162,20 +3173,64 @@ class StockTradingAppPro(tk.Tk):
                  bg="#1A2026", fg="#8A99AD", font=('微軟正黑體', 8)).grid(
                  row=17, column=0, columnspan=4, sticky='w', padx=15, pady=(2, 0))
 
-        tk.Label(dlg, text="※ 按下方按鈕會記住這些設定,下次開啟程式直接沿用。",
+        native_row = tk.Frame(dlg, bg="#1A2026")
+        native_row.grid(row=18, column=0, columnspan=4, sticky='w', padx=15, pady=(5, 2))
+        tk.Label(native_row, text="C++ 指標引擎", bg="#1A2026", fg="#80CBC4",
+                 font=('微軟正黑體', 9, 'bold')).pack(side=tk.LEFT)
+        ttk.Combobox(native_row, textvariable=self.native_indicator_mode_var,
+                     values=(engine_router.MODE_OFF, engine_router.MODE_SHADOW),
+                     width=9, state="readonly", style="BlackText.TCombobox").pack(
+                     side=tk.LEFT, padx=(8, 6))
+        native_status = tk.Label(native_row, text="off=Python；shadow=Python+C++比對",
+                                 bg="#1A2026", fg="#8A99AD", font=('微軟正黑體', 8))
+        native_status.pack(side=tk.LEFT, padx=4)
+
+        def _check_native():
+            try:
+                info = engine_router.probe_native()
+            except engine_router.IndicatorRouteError as exc:
+                native_status.config(text=f"不可用：{exc}", fg="#FF5252")
+                self.log_message(f"【Native 指標】runtime 檢查失敗：{exc}")
+                return False
+            native_status.config(
+                text=f"可用：v{info['native_version']}（ABI 已通過）", fg="#00E676")
+            self.log_message(
+                f"【Native 指標】runtime v{info['native_version']} 載入與 ABI 檢查通過。")
+            return True
+
+        tk.Button(native_row, text="檢查 Native", command=_check_native,
+                  bg="#455A64", fg="white", relief="flat",
+                  font=('微軟正黑體', 8)).pack(side=tk.LEFT, padx=4)
+
+        tk.Label(dlg, text="※ shadow 不改圖表結果；差異會讓本次重畫明確失敗。設定會於下次啟動沿用。",
                  bg="#1A2026", fg="#8A99AD", font=('微軟正黑體', 8)).grid(
-                 row=18, column=0, columnspan=4, sticky='w', padx=15)
+                 row=19, column=0, columnspan=4, sticky='w', padx=15)
 
         def _apply_main():
+            try:
+                selected_mode = engine_router.normalize_indicator_mode(
+                    self.native_indicator_mode_var.get())
+            except engine_router.IndicatorRouteError as exc:
+                messagebox.showerror("C++ 指標引擎", str(exc), parent=dlg)
+                return
+            if selected_mode == engine_router.MODE_SHADOW and not _check_native():
+                messagebox.showerror(
+                    "C++ 指標引擎",
+                    "Native runtime 尚未安裝或 ABI 不相容，無法啟用 shadow。\n"
+                    "請先執行：python native/build_native.py --install",
+                    parent=dlg)
+                return
             self.fib_ratios = list(fibonacci.normalize_ratios(
                 [r for r, v in fib_vars.items() if v.get()]))
             self._save_indicator_settings()
+            self.app_settings['native_indicators'] = selected_mode
+            self._save_app_settings()
             self.trigger_redraw()
             if self.fib_show.get():
                 self.safe_after(300, self._fib_log_summary)
             dlg.destroy()
 
-        tk.Button(dlg, text="確認並套用 (並記住此設定)", bg="#29B6F6", fg="black", font=('微軟正黑體', 10, 'bold'), command=_apply_main).grid(row=19, column=0, columnspan=4, pady=15)
+        tk.Button(dlg, text="確認並套用 (並記住此設定)", bg="#29B6F6", fg="black", font=('微軟正黑體', 10, 'bold'), command=_apply_main).grid(row=20, column=0, columnspan=4, pady=15)
 
     # 【ADR-134】副圖指標清單:(顯示名, 開關變數名, [(標籤, 變數名), ...])。
     # 這一份同時決定「整合對話框裡有哪幾列」與「工具列旁邊顯示哪幾個已開啟」,
