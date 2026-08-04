@@ -1854,6 +1854,10 @@ def _adr062_bnh_modes_and_compare():
     assert 'def _edit_cond_dialog' in src and 'def _sync_builder_from' in src
     assert 'def _qt_compare_dialog' in src and 'def _qt_compare_worker' in src
     assert 'def _qt_prepare_df' in src, "策略比較應與回測共用取資料流程"
+    assert "_extend_with_yahoo(df, tf, sym=st.get('symbol'))" in src, \
+        "策略比較延伸 Yahoo 資料必須使用 _qt_prepare_df 的 st 參數"
+    assert "_extend_with_yahoo(df, tf, sym=s.get('symbol'))" not in src, \
+        "策略比較不可引用不存在的 s 變數"
     assert '📊 策略比較' in src
 
     # 7) 比較視窗可開啟
