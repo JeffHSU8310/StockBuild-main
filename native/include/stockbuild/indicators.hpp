@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <span>
 #include <string>
 #include <vector>
@@ -20,6 +21,16 @@ struct IndicatorColumns final {
     std::vector<double> bb_lower;
     std::vector<double> bb_width;
 };
+
+struct MultiMovingAverageColumns final {
+    std::vector<std::vector<double>> values;
+    std::size_t rows{};
+};
+
+MultiMovingAverageColumns calculate_moving_averages(
+    std::span<const double> close,
+    std::span<const int> periods,
+    std::span<const std::string> kinds);
 
 IndicatorColumns calculate_indicator_core(std::span<const double> close,
                                            int ma_period,

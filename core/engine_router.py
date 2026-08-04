@@ -168,6 +168,22 @@ def calculate_native_columns(
     batch = _prepare_indicator_batch(source)
     columns: dict[str, np.ndarray] = {}
 
+    ma_flags = list(settings.get("ma_flags") or ())
+    if any(bool(flag) for flag in ma_flags):
+        ma_types = list(settings.get("ma_types") or ())
+        ma_periods = list(settings.get("ma_periods") or ())
+        if len(ma_types) < len(ma_flags) or len(ma_periods) < len(ma_flags):
+            raise IndicatorRouteError("自訂 MA 的開關、類型與週期數量不一致")
+        enabled_indices = [index for index, flag in enumerate(ma_flags) if bool(flag)]
+        moving_averages = native_bridge.calculate_native_moving_averages(
+            native_module,
+            batch,
+            [ma_periods[index] for index in enabled_indices],
+            [ma_types[index] for index in enabled_indices],
+        )
+        for index, values in zip(enabled_indices, moving_averages.values):
+            columns[f"MA_CUSTOM_{index}"] = values
+
     bb_enabled = bool(settings.get("bb_enabled", False))
     macd_enabled = bool(settings.get("macd_enabled", False))
     rsi_enabled = bool(settings.get("rsi_enabled", False))
@@ -326,6 +342,8 @@ def _column_tolerance(column: str) -> tuple[float, float]:
 
 
 def _has_supported_columns(settings: Mapping[str, Any]) -> bool:
+    if any(bool(flag) for flag in (settings.get("ma_flags") or ())):
+        return True
     return any(bool(settings.get(name, False)) for name in (
         "bb_enabled", "bb2_enabled", "macd_enabled", "rsi_enabled",
         "kdj_enabled", "dmi_enabled", "jae_enabled",

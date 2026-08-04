@@ -3391,6 +3391,7 @@ class StockTradingAppPro(tk.Tk):
             kdj_show=self.var_kdj.get(), kd_n=self.kd_n.get(), kd_m1=self.kd_m1.get(), kd_m2=self.kd_m2.get(),
             dmi_show=self.var_dmi.get(), dmi_n=self.dmi_n.get())
         route_settings = dict(
+            ma_flags=ma_flags, ma_types=ma_types, ma_periods=ma_periods,
             bb_enabled=bool(self.bb_show.get() or self.var_bbw.get()),
             bb_period=self.bb_period.get(),
             bb_std_up=self.bb_std_up.get(), bb_std_down=self.bb_std_dn.get(),

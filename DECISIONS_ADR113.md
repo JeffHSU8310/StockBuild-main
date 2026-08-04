@@ -1345,3 +1345,30 @@ Release native 32 項、MSVC ASan native 32 項、`diag_crossref` 與 71 個 Pyt
 - 本機長歷史仍只有日 K；大量期貨日夜盤分 K、13:45／15:00 與跨交易日邊界待驗。
 - `native` 正式輸出仍未開放；多組自訂 MA、回測、策略、選股仍走 Python。
 - 真實券商登入、報價與下單未執行，本階段不改任何送單安全邊界。
+
+## 追記三十四：ADR-151 C++ 批次多均線與主圖 31 欄 shadow
+
+`_stockbuild_native` 已升至 0.5.0，新增一次接受 1～64 組 SMA／EMA／WMA 的
+`multi_ma_core`。六組自訂 MA 只驗證一次 close、計算期間釋放 GIL，輸出共用
+capsule owner 且 readonly；產品 router 只收集已啟用項目，按原索引映射回
+`MA_CUSTOM_0`～`MA_CUSTOM_5`。KBar layout 未變，ABI/schema 版本維持 v1。
+
+初版 WMA 逐窗重算在 100 萬根基準只有 253.5442 ms，慢於向量化參考，因而未予
+接受；改為 O(n) compensated rolling sum 後，六組 MA 為 36.8362 ms，pandas
+rolling／ewm 加 NumPy convolution 參考為 158.5882 ms，提升 4.305 倍，NaN mask
+完全一致，報告精度下最大誤差為 0。實際 SQLite 產品 shadow：0050 日 K 5,215 根
+與 TXFR1 日 K 2,438 根均比對 31 欄、最大誤差 0，native 分別為 5.0836 ms 與
+2.5901 ms；匿名報告記於 `benchmarks/results/adr151_multi_ma_20260804.json`。
+
+合併前驗證：`test_core` 820 項、`test_brokers` 43 項、`diag_repro_issues` 66 項、
+Release native 34 項、MSVC ASan native 34 項、`diag_crossref` 與 72 個 Python
+檔案 `py_compile` 全數通過。
+
+### 待使用者實機驗證
+
+- 在「主圖指標參數設定」啟用六組不同類型／週期 MA，切 shadow 後操作股票／期貨、
+  日 K／分 K、縮放／重畫、保存／重啟，確認畫面、日誌與互動延遲正常。
+- 本機長歷史仍只有日 K；大量期貨日夜盤分 K、13:45／15:00 與跨交易日邊界待驗。
+- `native` 正式輸出仍未開放；回測、策略與選股仍走 Python，必須各自完成 C++ 核心、
+  golden differential 與 rollout 才能切換。
+- 真實券商登入、報價與下單未執行，本階段不改任何送單安全邊界。

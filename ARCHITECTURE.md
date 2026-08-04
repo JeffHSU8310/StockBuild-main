@@ -132,7 +132,7 @@ PITFALLS P-27）。它們存在的唯一理由就是「可離線單元測試」�
 - `migration_baseline.py`（ADR-144）：C++／Qt 移植前的 canonical JSON、SHA-256
   與逐欄 golden comparison。它只記錄 Python authoritative output，不含產品路由、
   native fallback 或交易規則；交易損益／選股名單的突變必須讓測試轉紅。
-- `native_bridge.py`（ADR-145/146）：驗證 native ABI 與 KBar dtype/stride，並把
+- `native_bridge.py`（ADR-145/146/151）：驗證 native ABI 與 KBar dtype/stride，並把
   C++ read-only prepared SQLite range query 產生的七個欄式 vectors 接成共享 capsule
   的唯讀 NumPy views。Python 仍是 SQLite 唯一 writer；目前正式 GUI／下載／回測
   尚未切到此 reader。
@@ -144,6 +144,8 @@ PITFALLS P-27）。它們存在的唯一理由就是「可離線單元測試」�
   ADR-150 後 extension 由 `native/build_native.py --install` 安裝到
   `native/runtime/<Python ABI>/`；loader 只接受正常 import、明確環境設定與受控 runtime，
   GUI 主圖設定可選 off／shadow，保存 shadow 前必須先通過載入與 ABI probe。
+  ADR-151 起六組自訂 SMA／EMA／WMA 以一次 `multi_ma_core` 批次呼叫加入同一路由，
+  主圖 shadow 最多核對 31 欄；正式 `native` 仍待實機 GUI 與夜盤分 K 驗收。
 - `palette.py`（ADR-138）：指標線色盤。**舊有 8 色排最前面且標籤字串不可
   更動** —— `indicator_settings.json` 存的是**標籤字串**不是色碼，標籤一改，
   使用者存過的顏色會全部對不上而靜默退回預設色。後面接 255 系統色
@@ -347,9 +349,9 @@ D:\StockBuild-main\
 │   ├─ market_session.py    交易時段/開盤暖機/跨開盤判斷 (ADR-070/121/127)
 │   ├─ kbars_plan.py        kbars 分段門檻/段長的單一出處 (ADR-122)
 │   ├─ migration_baseline.py C++ 移植 golden/benchmark 基準 (ADR-144)
-│   ├─ native_bridge.py     ABI、SQLite range、resampler／指標 shadow API (ADR-145～148)
+│   ├─ native_bridge.py     ABI、SQLite range、resampler／批次指標 shadow API (ADR-145～151)
 │   └─ order_rules.py
-├─ native/                 CMake/MSVC x64/pybind11 原生核心 (ADR-145～148)
+├─ native/                 CMake/MSVC x64/pybind11 原生核心 (ADR-145～151)
 │   ├─ include/stockbuild/  版本、KBar、SQLite、resampler、兩批 indicator 介面
 │   ├─ src/                 SQLite RAII、resampler 與 indicator 實作
 │   ├─ tests/               C++ schema smoke test

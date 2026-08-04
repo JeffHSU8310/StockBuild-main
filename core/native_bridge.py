@@ -103,6 +103,19 @@ class IndicatorBatch:
 
 
 @dataclass(frozen=True)
+class MultiMovingAverageBatch:
+    values: tuple[np.ndarray, ...]
+
+    @property
+    def rows(self):
+        return int(self.values[0].size) if self.values else 0
+
+    @property
+    def count(self):
+        return len(self.values)
+
+
+@dataclass(frozen=True)
 class AdvancedIndicatorBatch:
     rsv: np.ndarray
     k: np.ndarray
@@ -488,6 +501,39 @@ def calculate_native_indicators(
             raise KBarSchemaError(f'native indicator {name} 列數不一致')
         column.setflags(write=False)
     return IndicatorBatch(*columns)
+
+
+def calculate_native_moving_averages(module, batch, periods, kinds):
+    """【ADR-151】一次計算多組不同週期／類型 MA，避免重跑完整 indicator core。"""
+    validate_abi_info(dict(module.abi_info()))
+    validate_batch(batch)
+    parsed_periods = [_positive_period(value, 'ma_period') for value in periods]
+    parsed_kinds = [str(value).strip().upper() for value in kinds]
+    if len(parsed_periods) != len(parsed_kinds):
+        raise KBarSchemaError('MA periods 與 kinds 數量不一致')
+    if not parsed_periods or len(parsed_periods) > 64:
+        raise KBarSchemaError('MA 請求數量必須介於 1 與 64')
+    invalid = [kind for kind in parsed_kinds if kind not in ('SMA', 'EMA', 'WMA')]
+    if invalid:
+        raise KBarSchemaError(f'MA 類型只接受 SMA、EMA、WMA：{invalid[0]}')
+    payload = dict(module.multi_ma_core(batch.close, parsed_periods, parsed_kinds))
+    try:
+        values = tuple(payload['values'])
+        rows = int(payload['rows'])
+        count = int(payload['count'])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise KBarSchemaError(f'native multi MA 回傳缺少欄位：{exc}') from exc
+    if count != len(parsed_periods) or len(values) != count:
+        raise KBarSchemaError(
+            f'native multi MA 欄數不一致：expected={len(parsed_periods)}, actual={count}')
+    for index, column in enumerate(values):
+        if (not isinstance(column, np.ndarray) or column.ndim != 1 or
+                column.dtype != np.dtype(np.float64) or not column.flags.c_contiguous):
+            raise KBarSchemaError(f'native multi MA 第 {index + 1} 欄不是 float64 contiguous ABI')
+        if column.size != rows or column.size != batch.rows:
+            raise KBarSchemaError(f'native multi MA 第 {index + 1} 欄列數不一致')
+        column.setflags(write=False)
+    return MultiMovingAverageBatch(values)
 
 
 def calculate_native_advanced_indicators(
