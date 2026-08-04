@@ -1,0 +1,145 @@
+{
+  "environment": {
+    "cpu_count": 12,
+    "machine": "AMD64",
+    "packages": {
+      "numpy": "2.4.6",
+      "pandas": "3.0.3"
+    },
+    "platform": "Windows-10-10.0.19045-SP0",
+    "processor": "Intel64 Family 6 Model 165 Stepping 5, GenuineIntel",
+    "python": "3.14.5",
+    "python_executable": "python.exe",
+    "python_implementation": "CPython",
+    "release": "10",
+    "system": "Windows"
+  },
+  "golden_bundle_hash": "992478ff135d19723182f1fee9f6a32cdc8f343a70af03502028fb1148024fc4",
+  "profile": "smoke",
+  "report_schema_version": 1,
+  "source": "adr144-synthetic-v1",
+  "sqlite_query_plan": [
+    "SEARCH kbars USING INDEX idx_kbars_lookup (symbol=? AND asset_type=? AND timeframe=? AND ts>? AND ts<?)"
+  ],
+  "summaries": {
+    "backtest": {
+      "equity_rows": 398,
+      "metrics_hash": "3d278e71ed5fd46441d5935928e7d10588afe511ddada4c8efb2db6eb27361f9",
+      "trades": 32
+    },
+    "optimizer": {
+      "best_hash": "b5b390635c257fbfbebceb97091e9a2fa6b1fea6ff82162150e0fcf033e82806",
+      "evaluated": 4
+    },
+    "screener": {
+      "passed": 4,
+      "rows_hash": "dc55c87e454eebb8d3e420e0a8f6131f6abcfc4e1bc778cfc9f61e8ab35ab88e",
+      "scanned": 12
+    },
+    "sqlite": {
+      "complete_hit": {
+        "api_calls": 0,
+        "coverage": {
+          "count": 40,
+          "first": "2022-01-03T09:00:00",
+          "last": "2022-01-03T09:39:00"
+        },
+        "download_ranges": [],
+        "initial_rows": 40,
+        "loaded_hash": "9724af0cdfcc84b537c5a0301152785ed8c97abbe720060eb8e56c2dd1056531",
+        "loaded_rows": 40,
+        "uses_composite_index": true
+      },
+      "new_symbol": {
+        "api_calls": 1,
+        "coverage": {
+          "count": 40,
+          "first": "2022-01-03T09:00:00",
+          "last": "2022-01-03T09:39:00"
+        },
+        "download_ranges": [
+          {
+            "end": "2022-01-03T09:39:00",
+            "start": "2022-01-03T09:00:00"
+          }
+        ],
+        "initial_rows": 0,
+        "loaded_hash": "9724af0cdfcc84b537c5a0301152785ed8c97abbe720060eb8e56c2dd1056531",
+        "loaded_rows": 40,
+        "uses_composite_index": true
+      },
+      "tail_increment": {
+        "api_calls": 1,
+        "coverage": {
+          "count": 40,
+          "first": "2022-01-03T09:00:00",
+          "last": "2022-01-03T09:39:00"
+        },
+        "download_ranges": [
+          {
+            "end": "2022-01-03T09:39:00",
+            "start": "2022-01-03T09:28:00"
+          }
+        ],
+        "initial_rows": 28,
+        "loaded_hash": "9724af0cdfcc84b537c5a0301152785ed8c97abbe720060eb8e56c2dd1056531",
+        "loaded_rows": 40,
+        "uses_composite_index": true
+      }
+    }
+  },
+  "timings": {
+    "backtest": {
+      "max_ms": 211.78,
+      "median_ms": 206.63585,
+      "min_ms": 201.4917,
+      "samples_ms": [
+        211.78,
+        201.4917
+      ]
+    },
+    "optimizer": {
+      "max_ms": 356.1802,
+      "median_ms": 356.10725,
+      "min_ms": 356.0343,
+      "samples_ms": [
+        356.0343,
+        356.1802
+      ]
+    },
+    "screener": {
+      "max_ms": 26.4386,
+      "median_ms": 26.2561,
+      "min_ms": 26.0736,
+      "samples_ms": [
+        26.0736,
+        26.4386
+      ]
+    },
+    "sqlite_scenarios": {
+      "max_ms": 138.2962,
+      "median_ms": 134.157,
+      "min_ms": 130.0178,
+      "samples_ms": [
+        130.0178,
+        138.2962
+      ]
+    }
+  },
+  "workload": {
+    "backtest_bars": 400,
+    "optimizer_bars": 180,
+    "optimizer_fast": [
+      5,
+      7
+    ],
+    "optimizer_slow": [
+      20,
+      25
+    ],
+    "repeats": 2,
+    "screener_bars": 90,
+    "screener_symbols": 12,
+    "warmups": 1
+  }
+}

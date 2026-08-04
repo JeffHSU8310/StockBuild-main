@@ -1173,3 +1173,20 @@ Python core 仍是唯一正式路徑，也沒有新的實機驗證項目可宣�
 本次純文件追記後已重跑 `test_core` 800 項、`test_brokers` 43 項（0 略過）、
 `diag_repro_issues` 63 項、`diag_crossref` 與全專案 `py_compile`，全部通過；
 Windows 測試使用 Python UTF-8 模式，避免系統 CP950 誤判子行程輸出。
+
+## 追記二十七：ADR-144 C++／Qt 移植 Phase 0 開工
+
+ADR-143 核准後，先依其立即下一步建立 Phase 0，不直接跳到 C++ 重寫：新增
+`core/migration_baseline.py`、離線 benchmark runner、版本化 smoke golden fixture，
+並涵蓋回測 trades/equity/markers/metrics、100 組 reference 最佳化、reference
+選股與 SQLite 完整命中／尾端增量／新商品三情境。
+
+本機 smoke bundle hash 為 `992478ff135d19723182f1fee9f6a32cdc8f343a70af03502028fb1148024fc4`，
+reference bundle hash 為 `9b7a94bcf897a35728d4eaca013fcf3ff182dc1f5e3e9692ec497104946062b5`。
+SQLite 三情境 API 計數為 `0／1／1`、range query 命中複合索引；首次執行實際抓到
+唯讀 query-plan connection 未 close 造成的 Windows `WinError 32`，已用 `closing()`
+修正並建立回歸測試。`full`（100,000 根／500 組／2,000×2,600）尚未執行，
+因此 ADR-144 與 ADR-143 都不得宣稱完成；產品 GUI／下載／送單路徑尚未切換。
+本次合併前已通過 `test_core` 807 項、`test_brokers` 43 項（0 略過）、
+`diag_repro_issues` 63 項、`diag_crossref` 與全專案 `py_compile`；真實券商登入、
+真實下單、Qt 與 full 長歷史實機測試均未執行。

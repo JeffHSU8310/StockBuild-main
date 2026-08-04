@@ -1,0 +1,165 @@
+{
+  "environment": {
+    "cpu_count": 12,
+    "machine": "AMD64",
+    "packages": {
+      "numpy": "2.4.6",
+      "pandas": "3.0.3"
+    },
+    "platform": "Windows-10-10.0.19045-SP0",
+    "processor": "Intel64 Family 6 Model 165 Stepping 5, GenuineIntel",
+    "python": "3.14.5",
+    "python_executable": "python.exe",
+    "python_implementation": "CPython",
+    "release": "10",
+    "system": "Windows"
+  },
+  "golden_bundle_hash": "9b7a94bcf897a35728d4eaca013fcf3ff182dc1f5e3e9692ec497104946062b5",
+  "profile": "reference",
+  "report_schema_version": 1,
+  "source": "adr144-synthetic-v1",
+  "sqlite_query_plan": [
+    "SEARCH kbars USING INDEX idx_kbars_lookup (symbol=? AND asset_type=? AND timeframe=? AND ts>? AND ts<?)"
+  ],
+  "summaries": {
+    "backtest": {
+      "equity_rows": 4998,
+      "metrics_hash": "e8701bd6cf93c1f0af1b0e94b416369613a02d086784c83f59468fc0e1f782f1",
+      "trades": 254
+    },
+    "optimizer": {
+      "best_hash": "06d5f4ca8c14e6969a1dbf41c0f27afdf09b932771dc0c4f95261035859d5176",
+      "evaluated": 100
+    },
+    "screener": {
+      "passed": 84,
+      "rows_hash": "2b20dc29cae54d585af5e1efbdd0bee15663650c787dad5ae0ce4a6763031b00",
+      "scanned": 300
+    },
+    "sqlite": {
+      "complete_hit": {
+        "api_calls": 0,
+        "coverage": {
+          "count": 40,
+          "first": "2022-01-03T09:00:00",
+          "last": "2022-01-03T09:39:00"
+        },
+        "download_ranges": [],
+        "initial_rows": 40,
+        "loaded_hash": "9724af0cdfcc84b537c5a0301152785ed8c97abbe720060eb8e56c2dd1056531",
+        "loaded_rows": 40,
+        "uses_composite_index": true
+      },
+      "new_symbol": {
+        "api_calls": 1,
+        "coverage": {
+          "count": 40,
+          "first": "2022-01-03T09:00:00",
+          "last": "2022-01-03T09:39:00"
+        },
+        "download_ranges": [
+          {
+            "end": "2022-01-03T09:39:00",
+            "start": "2022-01-03T09:00:00"
+          }
+        ],
+        "initial_rows": 0,
+        "loaded_hash": "9724af0cdfcc84b537c5a0301152785ed8c97abbe720060eb8e56c2dd1056531",
+        "loaded_rows": 40,
+        "uses_composite_index": true
+      },
+      "tail_increment": {
+        "api_calls": 1,
+        "coverage": {
+          "count": 40,
+          "first": "2022-01-03T09:00:00",
+          "last": "2022-01-03T09:39:00"
+        },
+        "download_ranges": [
+          {
+            "end": "2022-01-03T09:39:00",
+            "start": "2022-01-03T09:28:00"
+          }
+        ],
+        "initial_rows": 28,
+        "loaded_hash": "9724af0cdfcc84b537c5a0301152785ed8c97abbe720060eb8e56c2dd1056531",
+        "loaded_rows": 40,
+        "uses_composite_index": true
+      }
+    }
+  },
+  "timings": {
+    "backtest": {
+      "max_ms": 2621.9419,
+      "median_ms": 2604.4383,
+      "min_ms": 2593.6795,
+      "samples_ms": [
+        2593.6795,
+        2621.9419,
+        2604.4383
+      ]
+    },
+    "optimizer": {
+      "max_ms": 20668.923,
+      "median_ms": 20356.2167,
+      "min_ms": 19686.8114,
+      "samples_ms": [
+        20668.923,
+        20356.2167,
+        19686.8114
+      ]
+    },
+    "screener": {
+      "max_ms": 1341.6192,
+      "median_ms": 1340.6495,
+      "min_ms": 1337.8525,
+      "samples_ms": [
+        1340.6495,
+        1337.8525,
+        1341.6192
+      ]
+    },
+    "sqlite_scenarios": {
+      "max_ms": 136.9073,
+      "median_ms": 135.5513,
+      "min_ms": 135.1721,
+      "samples_ms": [
+        135.5513,
+        135.1721,
+        136.9073
+      ]
+    }
+  },
+  "workload": {
+    "backtest_bars": 5000,
+    "optimizer_bars": 400,
+    "optimizer_fast": [
+      3,
+      5,
+      7,
+      9,
+      11,
+      13,
+      15,
+      17,
+      19,
+      21
+    ],
+    "optimizer_slow": [
+      20,
+      25,
+      30,
+      35,
+      40,
+      45,
+      50,
+      55,
+      60,
+      65
+    ],
+    "repeats": 3,
+    "screener_bars": 520,
+    "screener_symbols": 300,
+    "warmups": 1
+  }
+}
