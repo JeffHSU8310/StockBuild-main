@@ -18,6 +18,7 @@ import tempfile
 import datetime
 import unittest
 import urllib.parse
+from pathlib import Path
 
 # 讓這份測試不管從哪個目錄被呼叫，都找得到專案根目錄下的 core/ 與 data/ 套件
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -248,6 +249,27 @@ class TestIndicatorEngineRouterADR149(unittest.TestCase):
             path = os.path.join(directory, 'app_settings.json')
             config_store.save_app_settings(path, {'native_indicators': 'shadow'})
             self.assertEqual(config_store.load_app_settings(path)['native_indicators'], 'shadow')
+
+    def test_native_runtime_directory_can_be_explicit_but_not_arbitrary_cwd(self):
+        old = os.environ.get('STOCKBUILD_NATIVE_DIR')
+        try:
+            os.environ['STOCKBUILD_NATIVE_DIR'] = os.path.join('C:\\', 'StockBuildRuntime')
+            directories = native_bridge.native_runtime_dirs()
+            self.assertEqual(directories[0], Path(os.environ['STOCKBUILD_NATIVE_DIR']).resolve())
+            self.assertTrue(any(path.parts[-3:-1] == ('native', 'runtime')
+                                for path in directories))
+        finally:
+            if old is None:
+                os.environ.pop('STOCKBUILD_NATIVE_DIR', None)
+            else:
+                os.environ['STOCKBUILD_NATIVE_DIR'] = old
+
+    def test_missing_explicit_runtime_reports_searched_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(native_bridge.NativeUnavailable, '已搜尋'):
+                native_bridge.load_native(
+                    module_name='_stockbuild_native_missing_adr150',
+                    search_dirs=[directory])
 
 
 class TestChartViewport(unittest.TestCase):

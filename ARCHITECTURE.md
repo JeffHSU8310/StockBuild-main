@@ -141,6 +141,9 @@ PITFALLS P-27）。它們存在的唯一理由就是「可離線單元測試」�
   ABI／載入／parity 失敗都明確往上拋，不可靜默 fallback。`native` 名稱已保留但
   在完成產品實機 shadow 與 extension 發布以前會拒絕啟用。第一個接點是主圖
   `calculate_custom_indicators()`；回測、策略與選股尚未切換。
+  ADR-150 後 extension 由 `native/build_native.py --install` 安裝到
+  `native/runtime/<Python ABI>/`；loader 只接受正常 import、明確環境設定與受控 runtime，
+  GUI 主圖設定可選 off／shadow，保存 shadow 前必須先通過載入與 ABI probe。
 - `palette.py`（ADR-138）：指標線色盤。**舊有 8 色排最前面且標籤字串不可
   更動** —— `indicator_settings.json` 存的是**標籤字串**不是色碼，標籤一改，
   使用者存過的顏色會全部對不上而靜默退回預設色。後面接 255 系統色
