@@ -1,0 +1,76 @@
+{
+  "cases": [
+    {
+      "asset_type": "stock",
+      "case_id": "34766802e403",
+      "compared_columns": 31,
+      "first_timestamp": "2006-08-09T00:00:00",
+      "last_timestamp": "2026-08-04T00:00:00",
+      "max_abs_error": 0.0,
+      "native_ms": 5.0836,
+      "rows": 5215,
+      "status": "passed",
+      "timeframe": "日K"
+    },
+    {
+      "asset_type": "future",
+      "case_id": "d857a0c96639",
+      "compared_columns": 31,
+      "first_timestamp": "2016-08-03T00:00:00",
+      "last_timestamp": "2026-08-04T00:00:00",
+      "max_abs_error": 0.0,
+      "native_ms": 2.5901,
+      "rows": 2438,
+      "status": "passed",
+      "timeframe": "日K"
+    }
+  ],
+  "environment": {
+    "cpu_count": 12,
+    "machine": "AMD64",
+    "packages": {
+      "numpy": "2.4.6",
+      "pandas": "3.0.3"
+    },
+    "platform": "Windows-10-10.0.19045-SP0",
+    "processor": "Intel64 Family 6 Model 165 Stepping 5, GenuineIntel",
+    "python": "3.14.5",
+    "python_executable": "python.exe",
+    "python_implementation": "CPython",
+    "release": "10",
+    "system": "Windows"
+  },
+  "multi_ma": {
+    "columns": 6,
+    "max_abs_error": 0.0,
+    "native_ms": 36.8362,
+    "periods": [
+      5,
+      10,
+      20,
+      60,
+      120,
+      240
+    ],
+    "reference": "pandas rolling/ewm + NumPy convolution",
+    "reference_ms": 158.5882,
+    "rows": 1000000,
+    "speedup_vs_reference": 4.30522692,
+    "types": [
+      "SMA",
+      "EMA",
+      "WMA",
+      "SMA",
+      "EMA",
+      "WMA"
+    ]
+  },
+  "report_schema_version": 1,
+  "route_mode": "shadow",
+  "runtime": {
+    "module_sha256": "dffe11117c28838c34db22ed5b4dcaf0ce98129966046c186bd8d299fbcaa707",
+    "native_version": "0.5.0",
+    "python_cache_tag": "cpython-314"
+  },
+  "supported_columns": 31
+}

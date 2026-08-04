@@ -6276,6 +6276,30 @@ run_case("ADR-150: Native runtime正式安裝 / GUI off-shadow入口 / ABI檢查
          _native_runtime_rollout_150)
 
 
+def _native_multi_ma_151():
+    """六組自訂 MA 必須進同一次 native batch，且 GUI route 不可漏傳設定。"""
+    import inspect as _inspect
+    from core import engine_router as _engine_router
+    from core import native_bridge as _native_bridge
+
+    route_source = _inspect.getsource(_engine_router.calculate_native_columns)
+    bridge_source = _inspect.getsource(_native_bridge.calculate_native_moving_averages)
+    gui_source = _inspect.getsource(
+        stock_app_pro.StockTradingAppPro.calculate_custom_indicators)
+    assert 'calculate_native_moving_averages' in route_source, \
+        "產品 router 尚未呼叫 ADR151 multi MA batch"
+    assert 'multi_ma_core' in bridge_source, \
+        "Python bridge 尚未接到 C++ multi_ma_core"
+    for required in ('ma_flags', 'ma_types', 'ma_periods'):
+        assert required in gui_source, f"GUI route settings 漏傳 {required}"
+    assert _engine_router._has_supported_columns({'ma_flags': [False, True]}), \
+        "只啟用自訂 MA 時 shadow 不可誤判為沒有支援欄位"
+
+
+run_case("ADR-151: 六組自訂MA進C++批次核心 / GUI shadow最多31欄",
+         _native_multi_ma_151)
+
+
 print(f"{'案例':60s} 結果")
 print("-" * 76)
 for name, st, msg in results:

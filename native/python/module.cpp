@@ -331,6 +331,34 @@ py::dict indicator_core_native(const py::array& close,
     return result;
 }
 
+py::dict multi_ma_core_native(const py::array& close,
+                              const std::vector<int>& periods,
+                              const std::vector<std::string>& kinds) {
+    const py::buffer_info info = require_column<double>(close, "close");
+    std::unique_ptr<stockbuild::MultiMovingAverageColumns> columns;
+    {
+        py::gil_scoped_release release;
+        columns = std::make_unique<stockbuild::MultiMovingAverageColumns>(
+            stockbuild::calculate_moving_averages(
+                {static_cast<const double*>(info.ptr),
+                 static_cast<std::size_t>(info.shape[0])},
+                periods, kinds));
+    }
+    stockbuild::MultiMovingAverageColumns* raw = columns.release();
+    py::capsule owner(raw, [](void* pointer) {
+        delete static_cast<stockbuild::MultiMovingAverageColumns*>(pointer);
+    });
+    py::list values;
+    for (std::vector<double>& column : raw->values) {
+        values.append(vector_view(column, owner));
+    }
+    py::dict result;
+    result["rows"] = raw->rows;
+    result["count"] = raw->values.size();
+    result["values"] = values;
+    return result;
+}
+
 py::dict advanced_indicator_core_native(const py::array& high,
                                         const py::array& low,
                                         const py::array& close,
@@ -386,7 +414,7 @@ py::dict advanced_indicator_core_native(const py::array& high,
 }  // namespace
 
 PYBIND11_MODULE(_stockbuild_native, module) {
-    module.doc() = "StockBuild ADR-148 native KBar data and indicator core";
+    module.doc() = "StockBuild ADR-151 native KBar data and indicator core";
     module.def("abi_info", &abi_info);
     module.def("handshake", &handshake, py::arg("expected_abi"), py::arg("expected_schema"));
     module.def("inspect_kbars", &inspect_kbars,
@@ -418,6 +446,8 @@ PYBIND11_MODULE(_stockbuild_native, module) {
                py::arg("macd_slow") = 26, py::arg("macd_signal") = 9,
                py::arg("bb_period") = 20, py::arg("bb_std_up") = 2.0,
                py::arg("bb_std_down") = 2.0, py::arg("bb_ma_type") = "SMA");
+    module.def("multi_ma_core", &multi_ma_core_native,
+               py::arg("close"), py::arg("periods"), py::arg("kinds"));
     module.def("advanced_indicator_core", &advanced_indicator_core_native,
                py::arg("high"), py::arg("low"), py::arg("close"),
                py::arg("kdj_n") = 9, py::arg("kdj_m1") = 3,

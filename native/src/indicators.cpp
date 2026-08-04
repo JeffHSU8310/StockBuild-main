@@ -15,6 +15,22 @@ double quiet_nan() noexcept {
     return std::numeric_limits<double>::quiet_NaN();
 }
 
+class CompensatedSum final {
+public:
+    void add(double value) noexcept {
+        const double adjusted = value - correction_;
+        const double next = value_ + adjusted;
+        correction_ = (next - value_) - adjusted;
+        value_ = next;
+    }
+
+    [[nodiscard]] double value() const noexcept { return value_; }
+
+private:
+    double value_{};
+    double correction_{};
+};
+
 void require_period(int period, const char* name, int minimum = 1) {
     if (period < minimum) {
         throw std::invalid_argument(std::string(name) + " 期間不合法");
@@ -67,14 +83,23 @@ std::vector<double> weighted_moving_average(std::span<const double> values, int 
         return result;
     }
     const double denominator = static_cast<double>(period) * (period + 1) / 2.0;
-    for (std::size_t end = static_cast<std::size_t>(period - 1);
-         end < values.size(); ++end) {
-        const std::size_t start = end + 1 - static_cast<std::size_t>(period);
-        double weighted_sum = 0.0;
-        for (int weight = 1; weight <= period; ++weight) {
-            weighted_sum += weight * values[start + static_cast<std::size_t>(weight - 1)];
-        }
-        result[end] = weighted_sum / denominator;
+    CompensatedSum window_sum;
+    CompensatedSum weighted_sum;
+    for (int weight = 1; weight <= period; ++weight) {
+        const double value = values[static_cast<std::size_t>(weight - 1)];
+        window_sum.add(value);
+        weighted_sum.add(weight * value);
+    }
+    result[static_cast<std::size_t>(period - 1)] = weighted_sum.value() / denominator;
+    for (std::size_t end = static_cast<std::size_t>(period); end < values.size(); ++end) {
+        const double previous_window_sum = window_sum.value();
+        const double outgoing = values[end - static_cast<std::size_t>(period)];
+        const double incoming = values[end];
+        weighted_sum.add(-previous_window_sum);
+        weighted_sum.add(period * incoming);
+        window_sum.add(-outgoing);
+        window_sum.add(incoming);
+        result[end] = weighted_sum.value() / denominator;
     }
     return result;
 }
@@ -143,6 +168,27 @@ std::vector<double> moving_average_by_kind(std::span<const double> values,
 }
 
 }  // namespace
+
+MultiMovingAverageColumns calculate_moving_averages(
+        std::span<const double> close,
+        std::span<const int> periods,
+        std::span<const std::string> kinds) {
+    if (periods.size() != kinds.size()) {
+        throw std::invalid_argument("MA periods 與 kinds 數量不一致");
+    }
+    if (periods.empty() || periods.size() > 64U) {
+        throw std::invalid_argument("MA 請求數量必須介於 1 與 64");
+    }
+    validate_close(close);
+    MultiMovingAverageColumns output;
+    output.rows = close.size();
+    output.values.reserve(periods.size());
+    for (std::size_t i = 0; i < periods.size(); ++i) {
+        require_period(periods[i], "ma_period");
+        output.values.push_back(moving_average_by_kind(close, periods[i], kinds[i]));
+    }
+    return output;
+}
 
 IndicatorColumns calculate_indicator_core(std::span<const double> close,
                                            int ma_period,

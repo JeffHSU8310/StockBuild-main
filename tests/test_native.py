@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""ADR-145～150 C++/pybind11/SQLite/產品 runtime 整合測試。"""
+"""ADR-145～151 C++/pybind11/SQLite/產品 runtime 整合測試。"""
 import importlib.util
 import json
 import os
@@ -22,7 +22,7 @@ from data import kbars_store
 from native import build_native
 
 
-class TestNativeFoundationADR145ToADR150(unittest.TestCase):
+class TestNativeFoundationADR145ToADR151(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         build_name = 'build-test-asan' if SANITIZERS else 'build-test'
@@ -157,11 +157,11 @@ class TestNativeFoundationADR145ToADR150(unittest.TestCase):
             cwd=ROOT, check=True, capture_output=True, text=True)
         info = json.loads(probe.stdout)
         self.assertEqual(Path(info['module_file']), module_path.resolve())
-        self.assertEqual(info['native_version'], '0.4.0')
+        self.assertEqual(info['native_version'], '0.5.0')
 
     def test_abi_layout_matches_python_contract(self):
         info = native_bridge.validate_abi_info(dict(self.native.abi_info()))
-        self.assertEqual(info['native_version'], '0.4.0')
+        self.assertEqual(info['native_version'], '0.5.0')
         self.assertEqual(info['struct_size'], 56)
         self.assertEqual(info['offsets']['flags'], 48)
         self.native.handshake(native_bridge.ABI_VERSION, native_bridge.KBAR_SCHEMA_VERSION)
@@ -564,6 +564,60 @@ class TestNativeFoundationADR145ToADR150(unittest.TestCase):
                     result.bb_mid, expected[kind].to_numpy(np.float64),
                     rtol=1e-12, atol=1e-12, equal_nan=True)
 
+    def test_adr151_multi_ma_matches_six_independent_pandas_formulas(self):
+        rows = 600
+        index = pd.date_range('2024-01-01', periods=rows, freq='D')
+        x = np.arange(rows, dtype=np.float64)
+        close = 80.0 + x * 0.031 + np.sin(x / 7.0) * 2.5
+        frame = self._ohlcv(index)
+        frame['Close'] = close
+        batch = native_bridge.prepare_kbars(frame)
+        periods = [5, 10, 20, 60, 120, 240]
+        kinds = ['SMA', 'EMA', 'WMA', 'SMA', 'EMA', 'WMA']
+        result = native_bridge.calculate_native_moving_averages(
+            self.native, batch, periods, kinds)
+
+        series = pd.Series(close, index=index)
+        expected = []
+        for period, kind in zip(periods, kinds):
+            if kind == 'SMA':
+                expected.append(series.rolling(period).mean())
+            elif kind == 'EMA':
+                expected.append(series.ewm(span=period, adjust=False).mean())
+            else:
+                weights = np.arange(1, period + 1, dtype=np.float64)
+                expected.append(series.rolling(period).apply(
+                    lambda values, w=weights: np.dot(values, w) / w.sum(), raw=True))
+        self.assertEqual(result.rows, rows)
+        self.assertEqual(result.count, 6)
+        for actual, wanted in zip(result.values, expected):
+            np.testing.assert_allclose(
+                actual, wanted.to_numpy(np.float64), rtol=2e-11, atol=2e-11,
+                equal_nan=True)
+        self.assertTrue(all(not column.flags.writeable for column in result.values))
+        owner = result.values[0].base
+        self.assertTrue(all(column.base is owner for column in result.values))
+
+    def test_adr151_multi_ma_empty_short_invalid_and_mutation_guards(self):
+        empty = native_bridge.calculate_native_moving_averages(
+            self.native, self._batch(0), [5], ['SMA'])
+        self.assertEqual(empty.rows, 0)
+        short = native_bridge.calculate_native_moving_averages(
+            self.native, self._batch(3), [5, 5], ['SMA', 'EMA'])
+        self.assertTrue(np.isnan(short.values[0]).all())
+        self.assertTrue(np.isfinite(short.values[1]).all())
+        for periods, kinds in (([], []), ([5], []), ([0], ['SMA']),
+                               ([5], ['UNKNOWN'])):
+            with self.subTest(periods=periods, kinds=kinds):
+                with self.assertRaises(native_bridge.KBarSchemaError):
+                    native_bridge.calculate_native_moving_averages(
+                        self.native, self._batch(4), periods, kinds)
+        with self.assertRaises(native_bridge.KBarSchemaError):
+            native_bridge.calculate_native_moving_averages(
+                self.native, self._batch(4), [1] * 65, ['SMA'] * 65)
+        with self.assertRaises(ValueError):
+            short.values[1][0] = 0.0
+
     def test_native_compute_empty_short_and_invalid_inputs(self):
         empty = self._batch(0)
         resampled = native_bridge.resample_kbars(
@@ -690,7 +744,11 @@ class TestNativeFoundationADR145ToADR150(unittest.TestCase):
 
     def test_adr149_real_native_shadow_routes_shared_indicator_columns(self):
         frame = self._ohlcv(pd.date_range('2024-01-01', periods=480, freq='D'))
+        ma_flags = [True] * 6
+        ma_types = ['SMA', 'EMA', 'WMA', 'SMA', 'EMA', 'WMA']
+        ma_periods = [5, 10, 20, 60, 120, 240]
         settings = {
+            'ma_flags': ma_flags, 'ma_types': ma_types, 'ma_periods': ma_periods,
             'bb_enabled': True, 'bb_period': 20,
             'bb_std_up': 2.1, 'bb_std_down': 1.8, 'bb_ma_type': 'EMA',
             'bb2_enabled': True, 'bb2_period': 55,
@@ -704,7 +762,7 @@ class TestNativeFoundationADR145ToADR150(unittest.TestCase):
                            'j_m2': 4, 'e_period': 55},
         }
         expected = indicators.calculate_indicators(
-            frame, [False] * 6, ['SMA'] * 6, [5] * 6,
+            frame, ma_flags, ma_types, ma_periods,
             bb_show=True, bbw_show=True, bb_period=20,
             bb_std_up=2.1, bb_std_dn=1.8, bb_type='EMA',
             bb2_show=True, bb2_period=55, bb2_std_up=2.5,
@@ -723,7 +781,7 @@ class TestNativeFoundationADR145ToADR150(unittest.TestCase):
             frame, expected, settings, mode='shadow', native_provider=provider)
         self.assertIs(routed.frame, expected)
         self.assertEqual(routed.telemetry['status'], 'passed')
-        self.assertEqual(routed.telemetry['compared_columns'], 25)
+        self.assertEqual(routed.telemetry['compared_columns'], 31)
 
 
 if __name__ == '__main__':

@@ -1517,8 +1517,9 @@
 - **根因**：用「加入新值、移除舊值」維護 weighted sum 或 variance 時，每次減法
   都留下 rounding error，長序列會持續累積；不同實作的浮點歸約順序也不可能要求
   bitwise 相等。
-- **正確做法**：先用百萬筆 benchmark 暴露累積誤差；WMA 與 sample STD 採逐視窗
-  重算，STD 使用 Welford 保持數值穩定。NaN mask 必須完全一致，再按欄位明定很窄的
+- **正確做法**：先用百萬筆 benchmark 暴露累積誤差；sample STD 可逐視窗用 Welford。
+  WMA 若要 O(n)，滾動 window sum 與 weighted sum 必須使用 compensated summation，
+  並以獨立 convolution 參考驗證長序列。NaN mask 必須完全一致，再按欄位明定很窄的
   `rtol/atol`，不可用一個寬鬆全域 tolerance 假裝語意等價。
 - **出處**：ADR-147 百萬根 resampler／indicator differential。
 
@@ -1555,3 +1556,14 @@
   `native/runtime/<Python cache tag>`；loader 不掃 cwd／build-test，且每次做 ABI handshake。
   安裝驗收必須用全新 Python 行程核對 `module_file`。ASan 產物禁止安裝為產品 runtime。
 - **出處**：ADR-150。
+
+### P-133　每條自訂 MA 重跑完整指標核心，會把 C++ 接線做成新的瓶頸
+
+- **症狀**：畫面雖顯示使用 native，六條 MA 卻分別觸發六次完整 indicator core，
+  RSI、MACD、Bollinger 被無意重算，資料越長 GUI 越慢。
+- **根因**：直接重用單組 API，沒有依產品消費方式設計批次介面；或把未啟用 MA
+  也一併送入，造成不必要計算與欄名對應錯位。
+- **正確做法**：先收集已啟用 MA 的原索引、period、kind，一次呼叫 `multi_ma_core`，
+  再按原索引映射 `MA_CUSTOM_n`。close 只驗證一次、計算釋放 GIL，所有輸出共享
+  owner 且 readonly；批次欄數、列數、dtype 與類型都要在 bridge 重驗。
+- **出處**：ADR-151。
