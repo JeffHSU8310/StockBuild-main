@@ -13,22 +13,27 @@
 
 - **所有回應一律使用繁體中文**，不可以用簡體中文或英文回覆使用者 (程式碼內的
   英文變數/函式名稱、註解慣例不受此限，這條規則只規範「跟使用者對話的文字」)。
-- **開發一律先在暫時的獨立分支進行** (例如 `claude/...-fxr392`)，修改完成後
-  在該分支測試/驗證。
-- **【使用者於 ADR-136 明確變更此規則】每一次都自行合併回 `main`**：
-  離線驗證 (單元測試 + 診斷 + 突變測試) 通過後，**不必再等使用者開口**，
-  直接合併進 `main` 並 push，然後切回新的工作分支 (ADR-107/113 的教訓：
-  不要停在 `main` 上繼續開發)。
-  - 合併**前**必須完成：`python tests/test_core.py`、`python tests/test_brokers.py`、
-    `python diag_repro_issues.py`、`python diag_crossref.py`、`py_compile` 全過，
-    且新功能要有突變測試證明斷言不是空殼。
-  - 合併**後**必須在 `main` 上重跑一次完整驗證 (曾在這一步抓到偶發紅)。
-  - 每一筆都要在 `DECISIONS_ADR113.md` 追記實機驗證狀態，
-    **照實寫明哪些還沒經過使用者實機驗證**——「自動合併」改變的是合併時機，
-    不是「可以假裝驗過了」。
-  - 交付說明仍要明確列出「請使用者實機驗證哪些操作」。
+- **GitHub 自動工作流程**：每次任務一律依序執行：
+  1. `git fetch origin`，切到 `main` 後以 `git pull --ff-only origin main` 取得 GitHub 最新版本。
+  2. 從最新 `main` 建立獨立工作分支（例如 `codex/<task>`），不可直接在 `main` 修改。
+  3. 在工作分支修改、整理檔案並執行與改動相稱的測試／診斷。
+  4. 將變更 commit、push 至 GitHub，並建立以 `main` 為 base 的 PR。
+  5. 驗證通過且無合併衝突時，自行合併 PR 回 GitHub `main`；若有敏感資訊、破壞性
+     操作、合併衝突或測試失敗，必須停下並向使用者說明。
+  6. 合併後，切回本機 `main` 並以 `git pull --ff-only origin main` 同步。
+- **本機同步目標不得硬編碼**：第 6 步的目標一律由 `git rev-parse --show-toplevel`
+  動態取得目前 worktree 根目錄；資料夾改名或搬移後仍以此結果為準。若命令失敗、
+  工作目錄不乾淨、或找到多個可能的 worktree，停止同步並請使用者指定路徑；不可
+  用 `clone` 覆蓋既有資料夾，也不可自動覆蓋未提交的本機變更。
+- 合併**前**必須完成：`python tests/test_core.py`、`python tests/test_brokers.py`、
+  `python diag_repro_issues.py`、`python diag_crossref.py`、`py_compile` 全過，且新功能
+  要有突變測試證明斷言不是空殼。
+- 合併**後**必須在 `main` 上重跑一次完整驗證 (曾在這一步抓到偶發紅)。
+- 每一筆都要在 `DECISIONS_ADR113.md` 追記實機驗證狀態，**照實寫明哪些還沒經過
+  使用者實機驗證**——自動合併不代表可以假裝驗過。
+- 交付說明仍要明確列出「請使用者實機驗證哪些操作」。
 - 使用者要 Claude 抓取「最新版本」時，直接讀取 `main` 分支即可 (不是暫時分支)，
-  因為 `main` 有可能被使用者用其他工具 (例如 Antigravity) 直接修改過。
+  因為 `main` 有可能被使用者用其他工具直接修改過。
 
 ---
 
