@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""ADR-145～147：Python 與 StockBuild C++ core 的版本／欄式資料邊界。
+"""ADR-145～148：Python 與 StockBuild C++ core 的版本／欄式資料邊界。
 
 本檔只驗證 ABI、dtype、stride、SQLite range 與轉送批次資料，不包含策略、
 成交或風控規則。
@@ -97,6 +97,31 @@ class IndicatorBatch:
         return {name: getattr(self, name) for name in (
             'sma', 'ema', 'wma', 'rsi', 'macd', 'signal', 'hist',
             'bb_mid', 'bb_std', 'bb_upper', 'bb_lower', 'bb_width')}
+
+
+@dataclass(frozen=True)
+class AdvancedIndicatorBatch:
+    rsv: np.ndarray
+    k: np.ndarray
+    d: np.ndarray
+    j: np.ndarray
+    plus_dm: np.ndarray
+    minus_dm: np.ndarray
+    plus_di: np.ndarray
+    minus_di: np.ndarray
+    adx: np.ndarray
+    jae_a: np.ndarray
+    jae_j: np.ndarray
+    jae_e: np.ndarray
+
+    @property
+    def rows(self):
+        return int(self.rsv.size)
+
+    def as_dict(self):
+        return {name: getattr(self, name) for name in (
+            'rsv', 'k', 'd', 'j', 'plus_dm', 'minus_dm',
+            'plus_di', 'minus_di', 'adx', 'jae_a', 'jae_j', 'jae_e')}
 
 
 def expected_abi_info():
@@ -390,3 +415,43 @@ def calculate_native_indicators(
             raise KBarSchemaError(f'native indicator {name} 列數不一致')
         column.setflags(write=False)
     return IndicatorBatch(*columns)
+
+
+def calculate_native_advanced_indicators(
+        module, batch, kdj_n=9, kdj_m1=3, kdj_m2=3, dmi_n=14,
+        jae_a_period=14, jae_j_n=9, jae_j_m1=3, jae_j_m2=3,
+        jae_e_period=60):
+    """計算 ADR-148 KDJ／DMI／JAE；目前只供 shadow/differential。"""
+    validate_abi_info(dict(module.abi_info()))
+    validate_batch(batch)
+    values = (
+        _positive_period(kdj_n, 'kdj_n'),
+        _positive_period(kdj_m1, 'kdj_m1'),
+        _positive_period(kdj_m2, 'kdj_m2'),
+        _positive_period(dmi_n, 'dmi_n'),
+        _positive_period(jae_a_period, 'jae_a_period'),
+        _positive_period(jae_j_n, 'jae_j_n'),
+        _positive_period(jae_j_m1, 'jae_j_m1'),
+        _positive_period(jae_j_m2, 'jae_j_m2'),
+        _positive_period(jae_e_period, 'jae_e_period'),
+    )
+    payload = dict(module.advanced_indicator_core(
+        batch.high, batch.low, batch.close, *values))
+    names = (
+        'rsv', 'k', 'd', 'j', 'plus_dm', 'minus_dm',
+        'plus_di', 'minus_di', 'adx', 'jae_a', 'jae_j', 'jae_e',
+    )
+    try:
+        columns = [payload[name] for name in names]
+        rows = int(payload['rows'])
+    except KeyError as exc:
+        raise KBarSchemaError(f'native advanced indicator 結果缺少欄位: {exc}') from exc
+    for name, column in zip(names, columns):
+        if (not isinstance(column, np.ndarray) or column.ndim != 1 or
+                column.dtype != np.dtype(np.float64) or not column.flags.c_contiguous):
+            raise KBarSchemaError(
+                f'native advanced indicator {name} 不符合 float64 contiguous ABI')
+        if column.size != rows or column.size != batch.rows:
+            raise KBarSchemaError(f'native advanced indicator {name} 列數不一致')
+        column.setflags(write=False)
+    return AdvancedIndicatorBatch(*columns)

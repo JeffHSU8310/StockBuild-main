@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+#include "stockbuild/advanced_indicators.hpp"
 #include "stockbuild/kbar_schema.hpp"
 #include "stockbuild/indicators.hpp"
 #include "stockbuild/resampler.hpp"
@@ -330,10 +331,62 @@ py::dict indicator_core_native(const py::array& close,
     return result;
 }
 
+py::dict advanced_indicator_core_native(const py::array& high,
+                                        const py::array& low,
+                                        const py::array& close,
+                                        int kdj_n,
+                                        int kdj_m1,
+                                        int kdj_m2,
+                                        int dmi_n,
+                                        int jae_a_period,
+                                        int jae_j_n,
+                                        int jae_j_m1,
+                                        int jae_j_m2,
+                                        int jae_e_period) {
+    const py::buffer_info high_info = require_column<double>(high, "high");
+    const py::buffer_info low_info = require_column<double>(low, "low");
+    const py::buffer_info close_info = require_column<double>(close, "close");
+    if (high_info.shape[0] != close_info.shape[0] ||
+        low_info.shape[0] != close_info.shape[0]) {
+        throw std::invalid_argument("high/low/close 列數不一致");
+    }
+    const std::size_t rows = static_cast<std::size_t>(close_info.shape[0]);
+    std::unique_ptr<stockbuild::AdvancedIndicatorColumns> columns;
+    {
+        py::gil_scoped_release release;
+        columns = std::make_unique<stockbuild::AdvancedIndicatorColumns>(
+            stockbuild::calculate_advanced_indicators(
+                {static_cast<const double*>(high_info.ptr), rows},
+                {static_cast<const double*>(low_info.ptr), rows},
+                {static_cast<const double*>(close_info.ptr), rows},
+                kdj_n, kdj_m1, kdj_m2, dmi_n,
+                jae_a_period, jae_j_n, jae_j_m1, jae_j_m2, jae_e_period));
+    }
+    stockbuild::AdvancedIndicatorColumns* raw = columns.release();
+    py::capsule owner(raw, [](void* pointer) {
+        delete static_cast<stockbuild::AdvancedIndicatorColumns*>(pointer);
+    });
+    py::dict result;
+    result["rows"] = raw->rsv.size();
+    result["rsv"] = vector_view(raw->rsv, owner);
+    result["k"] = vector_view(raw->k, owner);
+    result["d"] = vector_view(raw->d, owner);
+    result["j"] = vector_view(raw->j, owner);
+    result["plus_dm"] = vector_view(raw->plus_dm, owner);
+    result["minus_dm"] = vector_view(raw->minus_dm, owner);
+    result["plus_di"] = vector_view(raw->plus_di, owner);
+    result["minus_di"] = vector_view(raw->minus_di, owner);
+    result["adx"] = vector_view(raw->adx, owner);
+    result["jae_a"] = vector_view(raw->jae_a, owner);
+    result["jae_j"] = vector_view(raw->jae_j, owner);
+    result["jae_e"] = vector_view(raw->jae_e, owner);
+    return result;
+}
+
 }  // namespace
 
 PYBIND11_MODULE(_stockbuild_native, module) {
-    module.doc() = "StockBuild ADR-147 native KBar data and indicator core";
+    module.doc() = "StockBuild ADR-148 native KBar data and indicator core";
     module.def("abi_info", &abi_info);
     module.def("handshake", &handshake, py::arg("expected_abi"), py::arg("expected_schema"));
     module.def("inspect_kbars", &inspect_kbars,
@@ -365,4 +418,11 @@ PYBIND11_MODULE(_stockbuild_native, module) {
                py::arg("macd_slow") = 26, py::arg("macd_signal") = 9,
                py::arg("bb_period") = 20, py::arg("bb_std_up") = 2.0,
                py::arg("bb_std_down") = 2.0, py::arg("bb_ma_type") = "SMA");
+    module.def("advanced_indicator_core", &advanced_indicator_core_native,
+               py::arg("high"), py::arg("low"), py::arg("close"),
+               py::arg("kdj_n") = 9, py::arg("kdj_m1") = 3,
+               py::arg("kdj_m2") = 3, py::arg("dmi_n") = 14,
+               py::arg("jae_a_period") = 14, py::arg("jae_j_n") = 9,
+               py::arg("jae_j_m1") = 3, py::arg("jae_j_m2") = 3,
+               py::arg("jae_e_period") = 60);
 }

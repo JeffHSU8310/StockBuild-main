@@ -339,10 +339,10 @@ D:\StockBuild-main\
 │   ├─ market_session.py    交易時段/開盤暖機/跨開盤判斷 (ADR-070/121/127)
 │   ├─ kbars_plan.py        kbars 分段門檻/段長的單一出處 (ADR-122)
 │   ├─ migration_baseline.py C++ 移植 golden/benchmark 基準 (ADR-144)
-│   ├─ native_bridge.py     ABI、欄式 KBar、SQLite range、resampler／指標 shadow API (ADR-145～147)
+│   ├─ native_bridge.py     ABI、SQLite range、resampler／指標 shadow API (ADR-145～148)
 │   └─ order_rules.py
-├─ native/                 CMake/MSVC x64/pybind11 原生核心 (ADR-145～147)
-│   ├─ include/stockbuild/  版本、KBar schema、SQLite、resampler、indicator 介面
+├─ native/                 CMake/MSVC x64/pybind11 原生核心 (ADR-145～148)
+│   ├─ include/stockbuild/  版本、KBar、SQLite、resampler、兩批 indicator 介面
 │   ├─ src/                 SQLite RAII、resampler 與 indicator 實作
 │   ├─ tests/               C++ schema smoke test
 │   └─ build_native.py      可重現的 configure/build/CTest 工具

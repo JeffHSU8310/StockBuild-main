@@ -1,0 +1,119 @@
+{
+  "compiler": "MSVC x64 (2022 VsDevCmd)",
+  "environment": {
+    "cpu_count": 12,
+    "machine": "AMD64",
+    "packages": {
+      "numpy": "2.4.6",
+      "pandas": "3.0.3"
+    },
+    "platform": "Windows-10-10.0.19045-SP0",
+    "processor": "Intel64 Family 6 Model 165 Stepping 5, GenuineIntel",
+    "python": "3.14.5",
+    "python_executable": "python.exe",
+    "python_implementation": "CPython",
+    "release": "10",
+    "system": "Windows"
+  },
+  "native_module_sha256": "851fa675c94dd6ec248297b41bbee7dfe581a5f3a7104ce5d43f04d54543d19d",
+  "real_sqlite_shadow": [
+    {
+      "asset_type": "stock",
+      "case_id": "34766802e403",
+      "first_timestamp": "2006-08-09T00:00:00",
+      "last_timestamp": "2026-08-04T00:00:00",
+      "max_abs_error_x1e12_by_indicator": {
+        "adx": 0.0,
+        "d": 0.01421085,
+        "j": 0.02842171,
+        "jae_a": 0.0,
+        "jae_e": 0.0,
+        "jae_j": 0.02842171,
+        "k": 0.0,
+        "minus_di": 0.0,
+        "minus_dm": 0.0,
+        "plus_di": 0.0,
+        "plus_dm": 0.0,
+        "rsv": 0.0
+      },
+      "resampled_rows": {
+        "month": 241,
+        "week": 1044
+      },
+      "rows": 5215,
+      "timeframe": "日K"
+    },
+    {
+      "asset_type": "future",
+      "case_id": "d857a0c96639",
+      "first_timestamp": "2016-08-03T00:00:00",
+      "last_timestamp": "2026-08-04T00:00:00",
+      "max_abs_error_x1e12_by_indicator": {
+        "adx": 0.0,
+        "d": 0.0,
+        "j": 0.0,
+        "jae_a": 0.0,
+        "jae_e": 0.0,
+        "jae_j": 0.0,
+        "k": 0.0,
+        "minus_di": 0.0,
+        "minus_dm": 0.0,
+        "plus_di": 0.0,
+        "plus_dm": 0.0,
+        "rsv": 0.0
+      },
+      "resampled_rows": {
+        "month": 121,
+        "week": 517
+      },
+      "rows": 2438,
+      "timeframe": "日K"
+    }
+  ],
+  "repeats": 3,
+  "report_schema_version": 1,
+  "result": {
+    "all_columns_readonly": true,
+    "max_abs_error_x1e12_by_indicator": {
+      "adx": 0.0,
+      "d": 0.0,
+      "j": 0.0,
+      "jae_a": 0.0,
+      "jae_e": 0.0,
+      "jae_j": 0.0,
+      "k": 0.0,
+      "minus_di": 0.0,
+      "minus_dm": 0.0,
+      "plus_di": 0.0,
+      "plus_dm": 0.0,
+      "rsv": 0.0
+    },
+    "native_rows_per_second": 6094264.87018052,
+    "speedup_vs_python": 2.77234142
+  },
+  "rows": 1000000,
+  "timings": {
+    "native_advanced_indicators": {
+      "max_ms": 171.563,
+      "median_ms": 164.0887,
+      "min_ms": 161.327,
+      "samples_ms": [
+        161.327,
+        164.0887,
+        171.563
+      ]
+    },
+    "python_pandas_advanced_indicators": {
+      "max_ms": 468.0095,
+      "median_ms": 454.9099,
+      "min_ms": 443.2848,
+      "samples_ms": [
+        443.2848,
+        468.0095,
+        454.9099
+      ]
+    }
+  },
+  "warmups": 1,
+  "workload": "KDJ(9,3,3), DMI(14), JAE(14,9,3,3,60)"
+}

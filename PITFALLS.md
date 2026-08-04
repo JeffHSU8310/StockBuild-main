@@ -1521,3 +1521,15 @@
   重算，STD 使用 Welford 保持數值穩定。NaN mask 必須完全一致，再按欄位明定很窄的
   `rtol/atol`，不可用一個寬鬆全域 tolerance 假裝語意等價。
 - **出處**：ADR-147 百萬根 resampler／indicator differential。
+
+### P-130　pandas EWM 遇到 NaN 不是「當零」也不只是簡單跳過
+
+- **症狀**：KDJ 短資料正常，但 RSV 因零 range 在中段出現 NaN 後，C++ K／D／J
+  從下一筆開始與 pandas 分歧；JAE E 與 ADX 也可能有相同問題。
+- **根因**：pandas `ewm(adjust=False, ignore_na=False)` 在 leading NaN 前不建立 seed；
+  已有 seed 後遇到 NaN 會保留輸出但繼續衰減舊權重，下一個觀測值的有效權重因此
+  不等於一般無缺值的一步遞迴。
+- **正確做法**：native EWM 必須保存 initialized、old weight 與 decay 狀態，逐步
+  仿 pandas；測試同時放 leading NaN、internal NaN 與零 range，並要求 NaN mask
+  完全一致，不能只測永遠 finite 的漂亮行情。
+- **出處**：ADR-148 KDJ／DMI／JAE differential。

@@ -1,9 +1,9 @@
 # StockBuild native foundation
 
-這個目錄是 ADR-145～147 的 Windows 原生核心。提供 KBar ABI／批次邊界、SQLite
+這個目錄是 ADR-145～148 的 Windows 原生核心。提供 KBar ABI／批次邊界、SQLite
 唯讀 RAII reader、prepared range query、C++ 欄式 KBar buffers、OHLCV resampler，
-以及第一批 SMA／EMA／WMA／RSI／MACD／Bollinger 指標核心；尚未接管正式回測、
-策略、選股、GUI 或送單。
+第一批 SMA／EMA／WMA／RSI／MACD／Bollinger，以及第二批 KDJ／DMI／JAE
+指標核心；尚未接管正式回測、策略、選股、GUI 或送單。
 
 ## 建置與測試
 
@@ -26,6 +26,15 @@ differential／索引／snapshot／Windows 解鎖、時間分組語意、指標 
 ```powershell
 python benchmarks/adr146_sqlite_range.py --rows 1000000
 python benchmarks/adr147_resampler_indicators.py --rows 1000000
+python benchmarks/adr148_advanced_indicators.py --rows 1000000
+```
+
+若要對既有 SQLite 實際資料做 read-only shadow differential，可另外提供資料庫與
+一個以上的 `SYMBOL|ASSET_TYPE|TIMEFRAME` case；輸出只保存雜湊 case ID：
+
+```powershell
+python benchmarks/adr148_advanced_indicators.py --database data/kbars.sqlite3 `
+  --case '0050|stock|日K' --case 'TXFR1|future|日K'
 ```
 
 可用 `python native/build_native.py --sanitizers` 啟用 sanitizer 設定；MSVC 主機還必須
