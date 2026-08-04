@@ -1,7 +1,7 @@
 # ADR-145：Phase 1 原生工具鏈、KBar ABI 與 SQLite 唯讀骨架
 
 - **日期**：2026-08-04
-- **狀態**：Phase 1 基礎完成；產品路徑尚未切換，MSVC ASan 實機待可支援工具鏈
+- **狀態**：Phase 1 基礎與 MSVC ASan 驗證完成；產品路徑尚未切換
 
 ## 背景
 
@@ -54,7 +54,9 @@ ADR-143 Phase 1 前，必須先證明官方 Python 3.14 可載入原生模組、
 - 2026-08-04 本機 benchmark（1,000,000 根）中，DataFrame 轉欄式陣列中位數
   11.658 ms、C++ scan 2.482 ms、zero-copy echo 0.005 ms、SQLite 唯讀 probe
   2.251 ms；結果存於 `benchmarks/results/adr145_native_boundary_20260804.json`。
-- CMake 已提供 `STOCKBUILD_ENABLE_SANITIZERS`。本機 MSVC 可編譯 `/fsanitize=address`，
-  但連結器缺 `clang_rt.asan_dynamic_runtime_thunk-x86_64.lib`；Visual Studio Installer
-  加裝 ASan component 回傳 5007（主機不符合該元件需求），因此不得宣稱 ASan 已通過。
+- CMake 提供 `STOCKBUILD_ENABLE_SANITIZERS`。Windows 10 上的 Visual Studio 2026
+  不符合系統需求，改採並存 Visual Studio 2022 Build Tools 17.14 +
+  `Microsoft.VisualStudio.Component.VC.ASAN`；建置工具以 `vswhere` 明確選擇含元件的
+  toolset，sanitizer `.pyd` 已完成編譯、連結、CTest 與完整 Python/native suite。
+  本機 `python tests/test_native.py --sanitizers` 共 10 項全數通過。
 - 本階段未切換 GUI、回測、策略、選股、下載或送單；Python 仍是正式產品路徑。

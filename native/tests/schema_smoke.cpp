@@ -5,10 +5,10 @@
 
 int main() {
     using stockbuild::KBarRecord;
-    if (sizeof(KBarRecord) != 56 || alignof(KBarRecord) != 8 ||
-        offsetof(KBarRecord, close) != 32 || offsetof(KBarRecord, flags) != 48) {
-        return 1;
-    }
+    static_assert(sizeof(KBarRecord) == 56);
+    static_assert(alignof(KBarRecord) == 8);
+    static_assert(offsetof(KBarRecord, close) == 32);
+    static_assert(offsetof(KBarRecord, flags) == 48);
     std::cout << "abi=" << stockbuild::kAbiVersion
               << " schema=" << stockbuild::kKBarSchemaVersion
               << " size=" << sizeof(KBarRecord) << '\n';

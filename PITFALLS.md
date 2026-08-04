@@ -1484,6 +1484,10 @@
 - **正確做法**：正式 Windows `.pyd` 固定從 `VsDevCmd.bat -arch=x64 -host_arch=x64`
   啟動，用乾淨 build directory 完成 configure／compile／CTest／import；缺 SDK 就補齊
   Windows SDK，不以另一套 compiler 混搭。ASan 還要另外確認對應 runtime library 已安裝。
+- **Windows 10 補充**：Visual Studio 2026 不支援在 Windows 10 執行；sanitizer build
+  應由 `vswhere` 選擇並存的 Visual Studio 2022 + `Microsoft.VisualStudio.Component.VC.ASAN`，
+  不可只因最新 `cl.exe` 在 PATH 就誤用 2026。一般 build 與 sanitizer build 可用不同、
+  但都與官方 CPython 相容的 MSVC toolset。
 - **出處**：ADR-145。
 
 ### P-127　相同位元寬度不等於相同 NumPy dtype／C++ ABI
