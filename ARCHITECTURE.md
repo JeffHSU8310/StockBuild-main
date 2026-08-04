@@ -136,6 +136,11 @@ PITFALLS P-27）。它們存在的唯一理由就是「可離線單元測試」�
   C++ read-only prepared SQLite range query 產生的七個欄式 vectors 接成共享 capsule
   的唯讀 NumPy views。Python 仍是 SQLite 唯一 writer；目前正式 GUI／下載／回測
   尚未切到此 reader。
+- `engine_router.py`（ADR-149）：原生指標產品路由的單一契約。`off` 不載入 C++；
+  `shadow` 以 Python 結果為準並核對 native 的長度、NaN mask 與逐欄 tolerance；
+  ABI／載入／parity 失敗都明確往上拋，不可靜默 fallback。`native` 名稱已保留但
+  在完成產品實機 shadow 與 extension 發布以前會拒絕啟用。第一個接點是主圖
+  `calculate_custom_indicators()`；回測、策略與選股尚未切換。
 - `palette.py`（ADR-138）：指標線色盤。**舊有 8 色排最前面且標籤字串不可
   更動** —— `indicator_settings.json` 存的是**標籤字串**不是色碼，標籤一改，
   使用者存過的顏色會全部對不上而靜默退回預設色。後面接 255 系統色

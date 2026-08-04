@@ -63,6 +63,7 @@ from core import market_screener
 from core import screener_backtest
 from core import migration_baseline
 from core import native_bridge
+from core import engine_router
 from data import config_store
 from data import taifex_store
 from data import chips_store
@@ -165,6 +166,88 @@ class TestNativeBridgeADR145(unittest.TestCase):
         broken['offsets']['close'] = 24
         with self.assertRaises(native_bridge.NativeVersionError):
             native_bridge.validate_abi_info(broken)
+
+
+class TestIndicatorEngineRouterADR149(unittest.TestCase):
+    def setUp(self):
+        index = pd.date_range('2026-08-01', periods=4, freq='D')
+        self.source = pd.DataFrame({
+            'High': [11.0, 12.0, 13.0, 14.0],
+            'Low': [9.0, 10.0, 11.0, 12.0],
+            'Close': [10.0, 11.0, 12.0, 13.0],
+        }, index=index)
+        self.python_result = self.source.assign(
+            RSI=[np.nan, 50.0, 60.0, 70.0],
+            MACD=[0.0, 0.1, 0.2, 0.3])
+
+    def _provider(self, frame, settings):
+        self.assertIs(frame, self.source)
+        return engine_router.NativeIndicatorOutput(
+            columns={
+                'RSI': self.python_result['RSI'].to_numpy(np.float64),
+                'MACD': self.python_result['MACD'].to_numpy(np.float64),
+            }, native_version='test', elapsed_ms=1.25)
+
+    def test_off_does_not_load_native_and_preserves_identity(self):
+        def forbidden(*args):
+            raise AssertionError('off 模式不應呼叫 native provider')
+
+        result = engine_router.route_indicators(
+            self.source, self.python_result, {}, mode='off', native_provider=forbidden)
+        self.assertIs(result.frame, self.python_result)
+        self.assertEqual(result.telemetry['status'], 'disabled')
+
+    def test_shadow_requires_column_and_nan_parity(self):
+        result = engine_router.route_indicators(
+            self.source, self.python_result, {'rsi_enabled': True}, mode='shadow',
+            native_provider=self._provider)
+        self.assertIs(result.frame, self.python_result)
+        self.assertEqual(result.telemetry['compared_columns'], 2)
+        self.assertEqual(result.telemetry['status'], 'passed')
+
+    def test_shadow_with_no_supported_column_is_noop_without_loading_native(self):
+        def forbidden(*args):
+            raise AssertionError('沒有啟用支援欄位時不應載入 native')
+
+        result = engine_router.route_indicators(
+            self.source, self.python_result, {}, mode='shadow',
+            native_provider=forbidden)
+        self.assertIs(result.frame, self.python_result)
+        self.assertEqual(result.telemetry['status'], 'no_enabled_columns')
+
+    def test_shadow_detects_numeric_mutation(self):
+        def mutated(frame, settings):
+            values = self.python_result['MACD'].to_numpy(np.float64).copy()
+            values[2] += 0.01
+            return engine_router.NativeIndicatorOutput({'MACD': values}, 'test', 1.0)
+
+        with self.assertRaises(engine_router.IndicatorParityError):
+            engine_router.route_indicators(
+                self.source, self.python_result, {'macd_enabled': True}, mode='shadow',
+                native_provider=mutated)
+
+    def test_shadow_detects_nan_mutation(self):
+        def mutated(frame, settings):
+            values = self.python_result['RSI'].to_numpy(np.float64).copy()
+            values[0] = 0.0
+            return engine_router.NativeIndicatorOutput({'RSI': values}, 'test', 1.0)
+
+        with self.assertRaises(engine_router.IndicatorParityError):
+            engine_router.route_indicators(
+                self.source, self.python_result, {'rsi_enabled': True}, mode='shadow',
+                native_provider=mutated)
+
+    def test_native_mode_is_reserved_until_shadow_acceptance(self):
+        with self.assertRaisesRegex(engine_router.IndicatorRouteError, '尚未開放'):
+            engine_router.route_indicators(
+                self.source, self.python_result, {}, mode='native')
+
+    def test_app_setting_defaults_to_off_and_round_trips(self):
+        self.assertEqual(config_store.DEFAULT_APP_SETTINGS['native_indicators'], 'off')
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, 'app_settings.json')
+            config_store.save_app_settings(path, {'native_indicators': 'shadow'})
+            self.assertEqual(config_store.load_app_settings(path)['native_indicators'], 'shadow')
 
 
 class TestChartViewport(unittest.TestCase):

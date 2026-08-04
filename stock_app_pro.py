@@ -29,6 +29,7 @@ import urllib.parse
 # 跟 tkinter/shioaji 完全無關的計算與檔案存取邏輯。
 from core import tick_rules
 from core import indicators as core_indicators
+from core import engine_router
 from core import chart_viewport
 from core import history_policy
 from core import futures_session
@@ -3334,6 +3335,22 @@ class StockTradingAppPro(tk.Tk):
             rsi_show=self.var_rsi.get(), rsi_p=self.rsi_p.get(),
             kdj_show=self.var_kdj.get(), kd_n=self.kd_n.get(), kd_m1=self.kd_m1.get(), kd_m2=self.kd_m2.get(),
             dmi_show=self.var_dmi.get(), dmi_n=self.dmi_n.get())
+        route_settings = dict(
+            bb_enabled=bool(self.bb_show.get() or self.var_bbw.get()),
+            bb_period=self.bb_period.get(),
+            bb_std_up=self.bb_std_up.get(), bb_std_down=self.bb_std_dn.get(),
+            bb_ma_type=self.bb_type.get(),
+            bb2_enabled=bool(self.bb2_show.get()), bb2_period=self.bb2_period.get(),
+            bb2_std_up=self.bb2_std_up.get(), bb2_std_down=self.bb2_std_dn.get(),
+            bb2_ma_type=self.bb2_type.get(),
+            macd_enabled=bool(self.var_macd.get()),
+            macd_fast=self.macd_f.get(), macd_slow=self.macd_s.get(),
+            macd_signal=self.macd_sig.get(),
+            rsi_enabled=bool(self.var_rsi.get()), rsi_period=self.rsi_p.get(),
+            kdj_enabled=bool(self.var_kdj.get()), kdj_period=self.kd_n.get(),
+            k_smooth=self.kd_m1.get(), d_smooth=self.kd_m2.get(),
+            dmi_enabled=bool(self.var_dmi.get()), dmi_period=self.dmi_n.get(),
+            jae_enabled=bool(self.var_jae.get()), jae_params=self._jae_params_now())
 
         SJ_DAYS = {"1分K": 15, "5分K": 45, "15分K": 90, "30分K": 120, "60分K": 180,
                    "日K": 7300, "周K": 180, "月K": 180}
@@ -3349,7 +3366,7 @@ class StockTradingAppPro(tk.Tk):
                 bb2_std_up=self.bb2_std_up.get(), bb2_std_dn=self.bb2_std_dn.get(),
                 bb2_type=self.bb2_type.get(),
                 **common_kwargs)
-            return self._attach_jae(out)
+            return self._route_indicator_engine(df, self._attach_jae(out), route_settings)
         except TypeError:
             # 【第十輪修正 問題1】使用者機器上的 core/indicators.py 若還是舊版
             # (沒有 bb_period 等新參數),新主程式傳新參數會 TypeError,導致
@@ -3360,8 +3377,36 @@ class StockTradingAppPro(tk.Tk):
                 self._bb_param_warned = True
                 self.log_message("【版本提示】core/indicators.py 是舊版:布林自訂參數暫不生效 (固定20,2)。"
                                  "請把新版 indicators.py 覆蓋到 G:/StockBuild/core/indicators.py 後重啟。")
-            return self._attach_jae(core_indicators.calculate_indicators(
+            out = self._attach_jae(core_indicators.calculate_indicators(
                 df, ma_flags, ma_types, ma_periods, **common_kwargs))
+            return self._route_indicator_engine(df, out, route_settings)
+
+    def _route_indicator_engine(self, source, python_result, settings):
+        """【ADR-149】執行明確選取的 C++ 指標 shadow；失敗不得靜默降級。"""
+        mode = getattr(self, 'app_settings', {}).get(
+            'native_indicators', engine_router.MODE_OFF)
+        try:
+            routed = engine_router.route_indicators(
+                source, python_result, settings, mode=mode)
+        except engine_router.IndicatorRouteError as exc:
+            status = ('failed', str(exc))
+            if getattr(self, '_native_indicator_status', None) != status:
+                self._native_indicator_status = status
+                self.log_message(f"【Native 指標】shadow 失敗：{exc}")
+            raise
+
+        telemetry = routed.telemetry
+        if telemetry.get('status') == 'passed':
+            status = ('passed', telemetry.get('native_version'),
+                      telemetry.get('compared_columns'))
+            if getattr(self, '_native_indicator_status', None) != status:
+                self._native_indicator_status = status
+                self.log_message(
+                    "【Native 指標】shadow 通過："
+                    f"{telemetry['compared_columns']} 欄，"
+                    f"最大誤差 {telemetry['max_abs_error']:.3e}，"
+                    f"native {telemetry['native_ms']:.2f} ms")
+        return routed.frame
 
     def _attach_jae(self, df):
         """【ADR-134】JAE 沒開就完全不算 (省時間,也不會在 df 裡多塞欄位)。

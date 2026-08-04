@@ -1533,3 +1533,14 @@
   仿 pandas；測試同時放 leading NaN、internal NaN 與零 range，並要求 NaN mask
   完全一致，不能只測永遠 finite 的漂亮行情。
 - **出處**：ADR-148 KDJ／DMI／JAE differential。
+
+### P-131　產品 shadow 失敗後靜默 fallback，會把不等價偽裝成成功
+
+- **症狀**：C++ 欄位長度、NaN seed 或數值已和 Python 分歧，GUI 仍正常畫圖並只在
+  背景吞掉例外；團隊因此誤以為產品 shadow 已驗收，正式切換才出現策略差異。
+- **根因**：把「產品可用性 fallback」和「移植正確性驗收」混在同一條路由；另讓
+  `native` 只靠設定字串就能提前打開，繞過 extension 發布與真實資料門檻。
+- **正確做法**：所有消費者走 `core.engine_router`；`off` 才是純 Python，`shadow`
+  必須比對長度、NaN mask 與逐欄窄 tolerance，載入／ABI／parity 錯誤讓該次工作
+  明確失敗並記錄。`native` 在 ADR 驗收閘門完成前必須由程式拒絕，不只靠文件提醒。
+- **出處**：ADR-149。

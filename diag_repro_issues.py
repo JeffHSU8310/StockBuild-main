@@ -6231,6 +6231,29 @@ run_case("ADR-139: 永豐 API 測試 (只測連線/金鑰手動輸入/確認視�
          _sinopac_api_test_139)
 
 
+def _native_indicator_route_149():
+    """主圖入口必須真的經過 ADR149 router，不能只留下未使用的 shadow API。"""
+    import inspect as _inspect
+    from core import engine_router as _engine_router
+    from data import config_store as _config_store
+
+    source = _inspect.getsource(stock_app_pro.StockTradingAppPro.calculate_custom_indicators)
+    assert '_route_indicator_engine' in source, \
+        "主圖 calculate_custom_indicators 尚未接到 native 指標 router"
+    assert _config_store.DEFAULT_APP_SETTINGS.get('native_indicators') == 'off', \
+        "產品預設必須保持 Python off，不能未經驗收就開 native"
+    try:
+        _engine_router.normalize_indicator_mode('native')
+    except _engine_router.IndicatorRouteError:
+        pass
+    else:
+        raise AssertionError("ADR149 尚未驗收前，native 模式必須由程式明確拒絕")
+
+
+run_case("ADR-149: 主圖接入 native 指標 router / 預設off / native尚未開放",
+         _native_indicator_route_149)
+
+
 print(f"{'案例':60s} 結果")
 print("-" * 76)
 for name, st, msg in results:
