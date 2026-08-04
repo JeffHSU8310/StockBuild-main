@@ -1442,3 +1442,25 @@
   批次傳入；C++ `static_assert` 與 Python dtype/stride 測試同時核對欄位大小、
   offset、endianness。版本或 layout 不符立即拒載，不可猜測或靜默 fallback。
 - **出處**：ADR-143（SmartStock 唯讀架構檢查的直接教訓）。
+
+### P-123　讓 Python 與 C++ 都寫同一個 SQLite，只會把速度換成鎖庫與損壞風險
+- **症狀**：回測或圖表讀取時偶發 `database is locked`，關程式後 WAL/SHM 或 DB
+  仍被占用；更糟時 coverage 摘要已更新、K 棒主表卻只寫了一半，系統誤判不用下載。
+- **根因**：把「讓 C++ 直接讀 SQL」擴張成第二個 writer，兩邊各自做 migration、
+  transaction、checkpoint 與 cache invalidation；或跨執行緒共用同一個 connection。
+- **正確做法**：Python `data/kbars_store.py` 是唯一 writer 與 schema owner；C++
+  僅以 read-only/query-only 短 snapshot 連線讀取，每個工作獨立 connection，所有
+  statement/transaction/connection 用 RAII 收尾。coverage 摘要只能加速，主表仍是
+  真相；完整命中才允許 API 0 次，缺口要精確下載後由 Python upsert。
+- **出處**：ADR-143 第七節（延續 ADR-142 的連線關閉規則）。
+
+### P-124　「C++ 是核心」不等於要求使用者直接寫 C++ 策略
+- **症狀**：為了追求 native 速度，讓使用者編譯並載入任意 C++ DLL；結果遇到
+  compiler/ABI 不相容、pointer 越界、整個 GUI 崩潰，甚至 plugin 直接碰 broker
+  繞過 OrderIntent 與確認視窗。
+- **根因**：混淆「策略作者使用的語言」與「系統實際執行的後端」。
+- **正確做法**：標準格式固定為受限 Python Strategy Language，經 AST validator
+  編譯成 typed Strategy IR，再由 C++ 執行。舊動態 Python 明示相容模式，只負責
+  decision；C++ 仍掌管事件、風控、成交與績效。使用者 C++ plugin 不在標準功能內，
+  未來若要支援必須另開 ADR 並隔離行程。
+- **出處**：ADR-143 第八節。
